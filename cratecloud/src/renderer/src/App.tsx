@@ -11,7 +11,6 @@ function App(): React.JSX.Element {
       <TitleBar />
       <div className="main">
         <Sidebar />
-              hello
         <div className="content">
           <Toolbar />
           <BulkBar />
