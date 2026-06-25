@@ -1,0 +1,360 @@
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+.app{background:#0e0e12;color:#e8e8f0;font-family:'DM Sans',sans-serif;border-radius:12px;overflow:hidden;min-height:600px;display:flex;flex-direction:column;}
+.titlebar{background:#16161e;border-bottom:1px solid #2a2a3a;padding:0 16px;height:40px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.tb-dots{display:flex;gap:6px;}
+.tb-dot{width:11px;height:11px;border-radius:50%;}
+.tb-logo{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;color:#7f77dd;margin-left:8px;letter-spacing:-0.5px;}
+.tb-tabs{display:flex;gap:2px;margin-left:16px;}
+.tb-tab{font-size:12px;padding:4px 12px;border-radius:6px;cursor:pointer;color:#888;transition:all .15s;}
+.tb-tab.active{background:#252533;color:#e8e8f0;}
+.tb-actions{margin-left:auto;display:flex;gap:6px;align-items:center;}
+.icon-btn{background:none;border:1px solid #2a2a3a;border-radius:6px;color:#888;font-size:11px;padding:4px 10px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+.icon-btn:hover{border-color:#7f77dd;color:#a09be8;}
+.icon-btn.accent{background:#7f77dd;border-color:#7f77dd;color:#fff;}
+.main{display:flex;flex:1;overflow:hidden;}
+.sidebar{width:180px;background:#12121a;border-right:1px solid #1e1e2a;padding:12px 0;flex-shrink:0;display:flex;flex-direction:column;gap:2px;}
+.sb-section{font-size:10px;font-weight:500;letter-spacing:1px;color:#444;text-transform:uppercase;padding:12px 16px 6px;}
+.sb-item{display:flex;align-items:center;gap:8px;padding:7px 16px;cursor:pointer;font-size:12px;color:#666;transition:all .15s;border-radius:0;}
+.sb-item:hover{color:#a09be8;background:#1a1a26;}
+.sb-item.active{color:#a09be8;background:#1a1a26;border-right:2px solid #7f77dd;}
+.sb-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.sb-count{margin-left:auto;font-size:10px;background:#1e1e2a;padding:2px 6px;border-radius:10px;color:#555;}
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.toolbar{background:#13131b;border-bottom:1px solid #1e1e2a;padding:8px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.search-wrap{display:flex;align-items:center;gap:6px;background:#1a1a26;border:1px solid #2a2a3a;border-radius:7px;padding:5px 10px;flex:1;max-width:260px;}
+.search-wrap input{background:none;border:none;outline:none;color:#e8e8f0;font-size:12px;font-family:'DM Sans',sans-serif;width:100%;}
+.search-wrap input::placeholder{color:#444;}
+.filter-pills{display:flex;gap:5px;}
+.pill{font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid #2a2a3a;cursor:pointer;color:#666;transition:all .15s;background:none;}
+.pill:hover{border-color:#7f77dd;color:#a09be8;}
+.pill.on{background:#1e1b3a;border-color:#7f77dd;color:#a09be8;}
+.view-btns{margin-left:auto;display:flex;gap:4px;}
+.vbtn{background:none;border:1px solid #2a2a3a;border-radius:5px;color:#555;padding:4px 8px;cursor:pointer;font-size:11px;transition:all .15s;}
+.vbtn.active{background:#252533;color:#a09be8;border-color:#3a3a52;}
+.bulk-bar{background:#1e1b3a;border-bottom:1px solid #3a3060;padding:8px 16px;display:flex;align-items:center;gap:10px;font-size:12px;color:#a09be8;flex-shrink:0;}
+.bulk-bar span{font-weight:500;}
+.bulk-btn{background:none;border:1px solid #7f77dd;border-radius:5px;color:#a09be8;padding:4px 10px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;transition:all .15s;}
+.bulk-btn:hover{background:#7f77dd;color:#fff;}
+.bulk-btn.danger{border-color:#d85a30;color:#f0997b;}
+.bulk-btn.danger:hover{background:#d85a30;color:#fff;}
+.board{display:flex;gap:10px;padding:14px;overflow-x:auto;flex:1;align-items:flex-start;}
+.col{background:#16161e;border:1px solid #1e1e2a;border-radius:10px;width:185px;flex-shrink:0;display:flex;flex-direction:column;max-height:520px;}
+.col-header{padding:10px 12px 8px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #1e1e2a;}
+.col-title{font-size:12px;font-weight:500;color:#ccc;flex:1;}
+.col-count{font-size:10px;background:#1e1e2a;padding:2px 7px;border-radius:10px;color:#555;}
+.col-add{background:none;border:none;color:#444;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;}
+.col-add:hover{color:#7f77dd;}
+.col-body{padding:8px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1;}
+.track-card{background:#1a1a26;border:1px solid #252535;border-radius:8px;padding:9px 10px;cursor:pointer;transition:all .15s;user-select:none;}
+.track-card:hover{border-color:#3a3a55;background:#1e1e30;}
+.track-card.selected{border-color:#7f77dd;background:#1e1b3a;}
+.track-card.dragging{opacity:.4;}
+.track-top{display:flex;align-items:flex-start;gap:7px;margin-bottom:6px;}
+.track-check{width:14px;height:14px;border-radius:3px;border:1px solid #333;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;}
+.track-check.checked{background:#7f77dd;border-color:#7f77dd;}
+.check-mark{color:#fff;font-size:9px;line-height:1;}
+.track-info{flex:1;min-width:0;}
+.track-title{font-size:12px;font-weight:500;color:#e0e0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;}
+.track-artist{font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.track-tags{display:flex;flex-wrap:wrap;gap:3px;}
+.tag{font-size:10px;padding:2px 6px;border-radius:4px;font-family:'IBM Plex Mono',monospace;}
+.tag.bpm{background:#1a2535;color:#5d9fd8;}
+.tag.key{background:#1a2830;color:#3db88a;}
+.tag.genre{background:#261f3a;color:#9b8ed4;}
+.tag.energy{background:#2a1f1a;color:#d4855d;}
+.col-drop-zone{min-height:40px;border:1.5px dashed #252535;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#333;transition:all .2s;}
+.col-drop-zone.over{border-color:#7f77dd;background:#1a1830;color:#7f77dd;}
+.panel{width:220px;background:#12121a;border-left:1px solid #1e1e2a;display:flex;flex-direction:column;flex-shrink:0;}
+.panel-header{padding:12px 14px;border-bottom:1px solid #1e1e2a;font-size:12px;font-weight:500;color:#888;}
+.panel-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;flex:1;}
+.field-label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:#444;margin-bottom:4px;}
+.field-val{font-size:12px;color:#c0c0d8;background:#1a1a26;border:1px solid #252535;border-radius:6px;padding:6px 9px;font-family:'IBM Plex Mono',monospace;}
+.field-input{font-size:12px;color:#c0c0d8;background:#1a1a26;border:1px solid #252535;border-radius:6px;padding:6px 9px;font-family:'IBM Plex Mono',monospace;width:100%;outline:none;transition:border .15s;}
+.field-input:focus{border-color:#7f77dd;}
+.waveform{height:36px;background:#1a1a26;border:1px solid #252535;border-radius:6px;overflow:hidden;display:flex;align-items:center;padding:0 8px;gap:1.5px;}
+.wave-bar{width:2px;border-radius:1px;background:#7f77dd;opacity:.7;flex-shrink:0;}
+.ai-chip{background:#1e1b3a;border:1px solid #3a3060;border-radius:7px;padding:8px 10px;}
+.ai-label{font-size:10px;color:#7f77dd;letter-spacing:.5px;text-transform:uppercase;margin-bottom:5px;}
+.ai-match{font-size:11px;color:#c0c0d8;padding:3px 0;display:flex;justify-content:space-between;align-items:center;}
+.ai-pct{font-size:10px;color:#7f77dd;font-family:'IBM Plex Mono',monospace;}
+.save-btn{background:#7f77dd;border:none;border-radius:7px;color:#fff;font-size:12px;font-weight:500;padding:8px;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%;margin-top:auto;transition:all .15s;}
+.save-btn:hover{background:#9b8ed4;}
+</style>
+
+<div class="app">
+  <div class="titlebar">
+    <div class="tb-dots">
+      <div class="tb-dot" style="background:#ff5f57;"></div>
+      <div class="tb-dot" style="background:#febc2e;"></div>
+      <div class="tb-dot" style="background:#28c840;"></div>
+    </div>
+    <span class="tb-logo">⬡ CrateCloud</span>
+    <div class="tb-tabs">
+      <div class="tb-tab">Library</div>
+      <div class="tb-tab active">Board</div>
+      <div class="tb-tab">Setlist</div>
+      <div class="tb-tab">AI Match</div>
+    </div>
+    <div class="tb-actions">
+      <button class="icon-btn">⬆ Import</button>
+      <button class="icon-btn">☁ Sync</button>
+      <button class="icon-btn accent">+ Add tracks</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="sb-section">Crates</div>
+      <div class="sb-item active"><div class="sb-dot" style="background:#7f77dd;"></div> All tracks <span class="sb-count">247</span></div>
+      <div class="sb-item"><div class="sb-dot" style="background:#1d9e75;"></div> Peak hour <span class="sb-count">42</span></div>
+      <div class="sb-item"><div class="sb-dot" style="background:#378add;"></div> Warm up <span class="sb-count">31</span></div>
+      <div class="sb-item"><div class="sb-dot" style="background:#d85a30;"></div> Afro House <span class="sb-count">58</span></div>
+      <div class="sb-item"><div class="sb-dot" style="background:#d4537e;"></div> Tech House <span class="sb-count">74</span></div>
+      <div class="sb-item"><div class="sb-dot" style="background:#ba7517;"></div> B-sides <span class="sb-count">22</span></div>
+      <div class="sb-section">Smart</div>
+      <div class="sb-item"><div class="sb-dot" style="background:#444;"></div> Untagged <span class="sb-count">14</span></div>
+      <div class="sb-item"><div class="sb-dot" style="background:#444;"></div> Recently added</div>
+      <div class="sb-item"><div class="sb-dot" style="background:#444;"></div> High energy</div>
+      <div class="sb-section">Setlists</div>
+      <div class="sb-item"><div class="sb-dot" style="background:#555;"></div> Friday club set</div>
+      <div class="sb-item"><div class="sb-dot" style="background:#555;"></div> Festival 2026</div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="search-wrap">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="#555" stroke-width="1.5"/><line x1="11" y1="11" x2="14" y2="14" stroke="#555" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input placeholder="Search tracks, artists, tags…" />
+        </div>
+        <div class="filter-pills">
+          <button class="pill on">All</button>
+          <button class="pill">Untagged</button>
+          <button class="pill">8A–8B</button>
+          <button class="pill">128–132 BPM</button>
+        </div>
+        <div class="view-btns">
+          <button class="vbtn">≡ List</button>
+          <button class="vbtn active">⊞ Board</button>
+          <button class="vbtn">⊟ Grid</button>
+        </div>
+      </div>
+
+      <div class="bulk-bar" id="bulkBar" style="display:none;">
+        <span id="bulkCount">0 tracks selected</span>
+        <button class="bulk-btn" onclick="bulkMove('Peak hour')">→ Peak hour</button>
+        <button class="bulk-btn" onclick="bulkMove('Gig ready')">→ Gig ready</button>
+        <button class="bulk-btn" onclick="bulkTag()">✦ AI tag all</button>
+        <button class="bulk-btn danger" onclick="clearSelection()">✕ Deselect</button>
+      </div>
+
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header" id="panelTitle">Track inspector</div>
+      <div class="panel-body" id="panelBody">
+        <div style="color:#333;font-size:12px;text-align:center;padding-top:40px;">Click any track<br>to inspect &amp; edit</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TRACKS = {
+  'Untagged': [
+    {id:1,title:'Midnight Signal',artist:'Blvck Jvck',bpm:'',key:'',genre:'',energy:''},
+    {id:2,title:'Pressure Drop',artist:'Sole B',bpm:'',key:'',genre:'',energy:''},
+    {id:3,title:'Raw Frequency',artist:'Dali M',bpm:'',key:'',genre:'',energy:''},
+  ],
+  'Tagged': [
+    {id:4,title:'Solar Apex',artist:'Kenji Rō',bpm:'128',key:'8A',genre:'Tech House',energy:'7'},
+    {id:5,title:'Dust & Chrome',artist:'Femke V',bpm:'130',key:'11B',genre:'Techno',energy:'8'},
+    {id:6,title:'Neon Griot',artist:'Asa Oke',bpm:'126',key:'3A',genre:'Afro House',energy:'6'},
+  ],
+  'Crate ready': [
+    {id:7,title:'Afterglow',artist:'Pari S',bpm:'132',key:'8B',genre:'Tech House',energy:'9'},
+    {id:8,title:'Horizon Pulse',artist:'Kenji Rō',bpm:'124',key:'5A',genre:'Deep House',energy:'5'},
+  ],
+  'Gig ready': [
+    {id:9,title:'Peak Theory',artist:'Dali M',bpm:'134',key:'8A',genre:'Techno',energy:'10'},
+    {id:10,title:'Open Channel',artist:'Sole B',bpm:'127',key:'11A',genre:'Afro House',energy:'7'},
+  ],
+};
+
+const COL_COLORS = {'Untagged':'#888','Tagged':'#378add','Crate ready':'#1d9e75','Gig ready':'#7f77dd'};
+const AI_MATCHES = ['Solar Apex — Kenji Rō','Neon Griot — Asa Oke','Afterglow — Pari S'];
+
+let selected = new Set();
+let dragTrack = null, dragFrom = null;
+let activeTrack = null;
+
+function waveHtml() {
+  const heights = [8,14,20,28,22,35,28,20,33,26,18,30,24,16,34,28,22,36,30,18,25,32,20,14,28,22,16,30,24,18];
+  return heights.map(h=>`<div class="wave-bar" style="height:${h}px;"></div>`).join('');
+}
+
+function renderBoard() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  Object.entries(TRACKS).forEach(([col, tracks]) => {
+    const colEl = document.createElement('div');
+    colEl.className = 'col';
+    colEl.innerHTML = `
+      <div class="col-header">
+        <div style="width:8px;height:8px;border-radius:50%;background:${COL_COLORS[col]};flex-shrink:0;"></div>
+        <span class="col-title">${col}</span>
+        <span class="col-count">${tracks.length}</span>
+        <button class="col-add" title="Add track">+</button>
+      </div>
+      <div class="col-body" id="col-${col.replace(/\s/g,'_')}"></div>
+    `;
+    board.appendChild(colEl);
+    const body = colEl.querySelector('.col-body');
+
+    tracks.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'track-card' + (selected.has(t.id)?' selected':'');
+      card.draggable = true;
+      card.dataset.id = t.id;
+      card.dataset.col = col;
+      card.innerHTML = `
+        <div class="track-top">
+          <div class="track-check${selected.has(t.id)?' checked':''}" data-id="${t.id}">
+            ${selected.has(t.id)?'<span class="check-mark">✓</span>':''}
+          </div>
+          <div class="track-info">
+            <div class="track-title">${t.title}</div>
+            <div class="track-artist">${t.artist}</div>
+          </div>
+        </div>
+        <div class="track-tags">
+          ${t.bpm?`<span class="tag bpm">${t.bpm}</span>`:'<span class="tag bpm" style="opacity:.3">BPM?</span>'}
+          ${t.key?`<span class="tag key">${t.key}</span>`:'<span class="tag key" style="opacity:.3">Key?</span>'}
+          ${t.genre?`<span class="tag genre">${t.genre}</span>`:''}
+          ${t.energy?`<span class="tag energy">E${t.energy}</span>`:''}
+        </div>
+      `;
+      card.querySelector('.track-check').addEventListener('click', e => {
+        e.stopPropagation();
+        toggleSelect(t.id);
+      });
+      card.addEventListener('click', () => openInspector(t, col));
+      card.addEventListener('dragstart', () => { dragTrack = t; dragFrom = col; card.classList.add('dragging'); });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      body.appendChild(card);
+    });
+
+    const drop = document.createElement('div');
+    drop.className = 'col-drop-zone';
+    drop.textContent = 'Drop here';
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', e => {
+      e.preventDefault(); drop.classList.remove('over');
+      if(dragTrack && dragFrom !== col) {
+        TRACKS[dragFrom] = TRACKS[dragFrom].filter(x=>x.id!==dragTrack.id);
+        TRACKS[col].push(dragTrack);
+        dragTrack = null; dragFrom = null;
+        renderBoard();
+        updateBulkBar();
+      }
+    });
+    body.appendChild(drop);
+  });
+}
+
+function toggleSelect(id) {
+  if(selected.has(id)) selected.delete(id); else selected.add(id);
+  updateBulkBar();
+  renderBoard();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  document.getElementById('bulkCount').textContent = selected.size + ' track' + (selected.size!==1?'s':'') + ' selected';
+  bar.style.display = selected.size > 0 ? 'flex' : 'none';
+}
+
+function clearSelection() { selected.clear(); updateBulkBar(); renderBoard(); }
+
+function bulkMove(targetCol) {
+  selected.forEach(id => {
+    Object.keys(TRACKS).forEach(col => {
+      const idx = TRACKS[col].findIndex(t=>t.id===id);
+      if(idx>-1 && col!==targetCol) {
+        const [t] = TRACKS[col].splice(idx,1);
+        TRACKS[targetCol].push(t);
+      }
+    });
+  });
+  selected.clear(); updateBulkBar(); renderBoard();
+}
+
+function bulkTag() {
+  selected.forEach(id => {
+    Object.values(TRACKS).forEach(col => {
+      const t = col.find(x=>x.id===id);
+      if(t && !t.bpm) { t.bpm = String(Math.round(124 + Math.random()*12)); t.key = ['8A','11B','3A','5A','8B'][Math.floor(Math.random()*5)]; t.genre = ['Tech House','Afro House','Techno','Deep House'][Math.floor(Math.random()*4)]; t.energy = String(Math.round(5+Math.random()*5)); }
+    });
+  });
+  selected.clear(); updateBulkBar(); renderBoard();
+}
+
+function openInspector(t, col) {
+  activeTrack = t;
+  document.getElementById('panelTitle').textContent = 'Inspector — ' + col;
+  document.getElementById('panelBody').innerHTML = `
+    <div>
+      <div class="field-label">Title</div>
+      <input class="field-input" value="${t.title}" onchange="updateField(${t.id},'title',this.value)">
+    </div>
+    <div>
+      <div class="field-label">Artist</div>
+      <input class="field-input" value="${t.artist}" onchange="updateField(${t.id},'artist',this.value)">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div>
+        <div class="field-label">BPM</div>
+        <input class="field-input" value="${t.bpm||''}" placeholder="—" onchange="updateField(${t.id},'bpm',this.value)">
+      </div>
+      <div>
+        <div class="field-label">Key</div>
+        <input class="field-input" value="${t.key||''}" placeholder="—" onchange="updateField(${t.id},'key',this.value)">
+      </div>
+    </div>
+    <div>
+      <div class="field-label">Genre</div>
+      <input class="field-input" value="${t.genre||''}" placeholder="—" onchange="updateField(${t.id},'genre',this.value)">
+    </div>
+    <div>
+      <div class="field-label">Energy (1–10)</div>
+      <input class="field-input" value="${t.energy||''}" placeholder="—" onchange="updateField(${t.id},'energy',this.value)">
+    </div>
+    <div>
+      <div class="field-label">Waveform preview</div>
+      <div class="waveform">${waveHtml()}</div>
+    </div>
+    <div class="ai-chip">
+      <div class="ai-label">✦ AI harmonic matches</div>
+      ${AI_MATCHES.map(m=>`<div class="ai-match"><span>${m}</span><span class="ai-pct">${Math.round(78+Math.random()*18)}%</span></div>`).join('')}
+    </div>
+    <button class="save-btn" onclick="saveTrack()">Save changes</button>
+  `;
+}
+
+function updateField(id, field, val) {
+  Object.values(TRACKS).forEach(col => { const t = col.find(x=>x.id===id); if(t) t[field]=val; });
+}
+
+function saveTrack() {
+  renderBoard();
+  document.getElementById('panelTitle').textContent = 'Track inspector';
+  document.getElementById('panelBody').innerHTML = '<div style="color:#1d9e75;font-size:12px;text-align:center;padding-top:40px;">✓ Saved to library</div>';
+  setTimeout(()=>{ document.getElementById('panelBody').innerHTML = '<div style="color:#333;font-size:12px;text-align:center;padding-top:40px;">Click any track<br>to inspect &amp; edit</div>'; },1800);
+}
+
+renderBoard();
+</script>

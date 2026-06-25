@@ -1,34 +1,25 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { TitleBar } from './components/TitleBar'
+import { Sidebar } from './components/Sidebar'
+import { Toolbar } from './components/Toolbar'
+import { BulkBar } from './components/BulkBar'
+import { BoardView } from './components/board/BoardView'
+import { Inspector } from './components/Inspector'
 
 function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
-
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
+    <div className="app">
+      <TitleBar />
+      <div className="main">
+        <Sidebar />
+              hello
+        <div className="content">
+          <Toolbar />
+          <BulkBar />
+          <BoardView />
         </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
+        <Inspector />
       </div>
-      <Versions></Versions>
-    </>
+    </div>
   )
 }
 

@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: cratecloud
+appId: com.cratecloud.app
+productName: CrateCloud
 directories:
   buildResources: build
 files:
@@ -33,11 +33,8 @@ linux:
     - AppImage
     - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: Cornell Benson
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
