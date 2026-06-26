@@ -2,11 +2,13 @@ import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import type { Track } from '../../types/track'
 import { useLibraryStore } from '../../stores/useLibraryStore'
+import { useContextMenu } from '../../contexts/ContextMenuContext'
 
 type Props = { track: Track; col: string }
 
 export function TrackCard({ track, col }: Props): React.JSX.Element {
   const { selected, toggleSelect, setActiveTrack, activeTrack } = useLibraryStore()
+  const { openMenu } = useContextMenu()
   const isSelected = selected.has(track.id)
   const isInspected = activeTrack?.id === track.id
 
@@ -16,6 +18,12 @@ export function TrackCard({ track, col }: Props): React.JSX.Element {
   })
 
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    openMenu(e.clientX, e.clientY, track, col)
+  }
 
   return (
     <div
@@ -31,6 +39,7 @@ export function TrackCard({ track, col }: Props): React.JSX.Element {
         .filter(Boolean)
         .join(' ')}
       onClick={() => setActiveTrack(track, col)}
+      onContextMenu={handleContextMenu}
     >
       <div className="track-top">
         <div

@@ -1,18 +1,22 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, extname, basename } from 'path'
-import { readdir } from 'fs/promises'
+import { readdir, rename, copyFile, unlink, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, type AnalysisResult } from './audioSidecar'
+import { getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn } from './db'
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1100,
+    height: 720,
+    minWidth: 800,
+    minHeight: 560,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -43,6 +47,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // ── Audio analysis ────────────────────────────────────────────────────────
   ipcMain.handle('analyze-file', async (_event, filepath: string, writeBack = false) => {
     return analyzeFile(filepath, { writeBack })
   })
@@ -67,6 +72,94 @@ app.whenReady().then(() => {
       }
     }
     return results
+  })
+
+  // ── File dialogs ──────────────────────────────────────────────────────────
+  ipcMain.handle('dialog:openFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openDirectory'],
+      title: 'Select music folder',
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('dialog:openFiles', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openFile', 'multiSelections'],
+      title: 'Select audio files',
+      filters: [
+        { name: 'Audio Files', extensions: ['mp3', 'flac', 'wav', 'aiff', 'aif', 'm4a', 'ogg'] },
+      ],
+    })
+    return result.canceled ? [] : result.filePaths
+  })
+
+  // ── File system operations ────────────────────────────────────────────────
+  ipcMain.handle('fs:moveFile', async (_event, fromPath: string, toFolder: string) => {
+    const filename = basename(fromPath)
+    const toPath = join(toFolder, filename)
+    try {
+      await rename(fromPath, toPath)
+    } catch (err) {
+      // Cross-device move: copy then delete
+      if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+        await copyFile(fromPath, toPath)
+        await unlink(fromPath)
+      } else {
+        throw err
+      }
+    }
+    return toPath
+  })
+
+  ipcMain.handle('fs:trashFile', async (_event, filepath: string) => {
+    await shell.trashItem(filepath)
+  })
+
+  ipcMain.handle('fs:classifyDropped', async (_event, paths: string[]) => {
+    const files: string[] = []
+    const folders: string[] = []
+    for (const p of paths) {
+      try {
+        const s = await stat(p)
+        if (s.isDirectory()) folders.push(p)
+        else files.push(p)
+      } catch { /* skip inaccessible paths */ }
+    }
+    return { files, folders }
+  })
+
+  // ── Database ─────────────────────────────────────────────────────────────
+  ipcMain.handle('db:getTracks', () => getAllTracks())
+
+  ipcMain.handle('db:insertTracks', (_event, rows) => insertTracks(rows))
+
+  ipcMain.handle('db:updateTrack', (_event, id: number, fields: Record<string, unknown>) =>
+    updateTrackFields(id, fields)
+  )
+
+  ipcMain.handle('db:deleteTracks', (_event, ids: number[]) => deleteTracks(ids))
+
+  ipcMain.handle('db:moveTracks', (_event, ids: number[], column: string) =>
+    moveTracksToColumn(ids, column)
+  )
+
+  // ── Window controls ───────────────────────────────────────────────────────
+  ipcMain.on('window:close', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close()
+  })
+
+  ipcMain.on('window:minimize', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize()
+  })
+
+  ipcMain.on('window:maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
   })
 
   createWindow()

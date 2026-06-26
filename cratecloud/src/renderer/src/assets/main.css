@@ -118,3 +118,130 @@
 
 /* ── Grid layout helpers ── */
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* ── Import progress in titlebar ── */
+.tb-import-status { font-size: 11px; color: #7f77dd; font-family: 'IBM Plex Mono', monospace; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+/* ── Library view ── */
+.library { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.lib-summary { padding: 8px 16px; font-size: 11px; color: #444; border-bottom: 1px solid #1e1e2a; flex-shrink: 0; }
+.lib-table { width: 100%; border-collapse: collapse; }
+.lib-header-row { background: #13131b; position: sticky; top: 0; z-index: 1; }
+.lib-th { padding: 7px 12px; text-align: left; font-size: 10px; color: #555; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 1px solid #1e1e2a; white-space: nowrap; }
+.lib-th-num { width: 36px; text-align: right; }
+.lib-th-mono { font-family: 'IBM Plex Mono', monospace; }
+
+.lib-group-row { cursor: pointer; }
+.lib-group-row td { padding: 10px 12px 6px; font-size: 11px; color: #555; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 1px solid #1e1e2a; background: #111118; }
+.lib-group-row:hover td { color: #888; }
+.lib-group-chevron { font-size: 9px; margin-right: 8px; color: #444; }
+.lib-group-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+.lib-group-name { vertical-align: middle; }
+.lib-group-count { margin-left: 8px; background: #1e1e2a; padding: 1px 6px; border-radius: 8px; font-size: 10px; color: #444; vertical-align: middle; }
+
+.lib-track-row { cursor: pointer; transition: background .1s; }
+.lib-track-row:hover td { background: #181824; }
+.lib-track-row.active td { background: #1e1b3a; }
+.lib-td { padding: 7px 12px; font-size: 12px; color: #c0c0d8; border-bottom: 1px solid #16161e; vertical-align: middle; }
+.lib-td-num { text-align: right; color: #444; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+.lib-td-title { color: #e0e0f0; font-weight: 500; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-td-artist { color: #666; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-td-mono { font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+.lib-dim { color: #333; }
+.lib-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-family: 'IBM Plex Mono', monospace; }
+.lib-tag.bpm { background: #1a2535; color: #5d9fd8; }
+.lib-tag.key { background: #1a2830; color: #3db88a; }
+.lib-tag.energy { background: #2a1f1a; color: #d4855d; }
+.lib-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #333; font-size: 13px; padding: 60px; gap: 8px; text-align: center; }
+.lib-empty-icon { font-size: 2rem; color: #2a2738; margin-bottom: 4px; }
+.lib-empty-title { font-size: 15px; font-weight: 500; color: #444; }
+.lib-empty-sub { font-size: 12px; color: #333; } .lib-empty-sub strong { color: #555; }
+
+/* ── Setlist view ── */
+.setlist-container { display: flex; flex: 1; overflow: hidden; }
+.setlist-sidebar { width: 200px; background: #12121a; border-right: 1px solid #1e1e2a; overflow-y: auto; flex-shrink: 0; padding: 8px 0; }
+.setlist-sidebar-header { font-size: 10px; font-weight: 500; letter-spacing: 1px; color: #444; text-transform: uppercase; padding: 10px 16px 6px; }
+.setlist-group { margin-bottom: 4px; }
+.setlist-group-label { font-size: 11px; color: #555; padding: 6px 16px 3px; font-weight: 500; }
+.setlist-item { display: flex; align-items: center; gap: 6px; padding: 6px 16px; cursor: pointer; font-size: 12px; color: #666; transition: all .15s; }
+.setlist-item:hover { color: #a09be8; background: #1a1a26; }
+.setlist-item.active { color: #a09be8; background: #1a1a26; border-right: 2px solid #7f77dd; }
+.setlist-item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setlist-item-count { font-size: 10px; background: #1e1e2a; padding: 1px 6px; border-radius: 8px; color: #555; flex-shrink: 0; }
+.setlist-main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.setlist-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #333; font-size: 13px; }
+.setlist-detail-header { padding: 14px 16px 10px; border-bottom: 1px solid #1e1e2a; flex-shrink: 0; }
+.setlist-detail-name { font-size: 15px; font-weight: 500; color: #e0e0f0; margin-bottom: 4px; }
+.setlist-detail-meta { font-size: 11px; color: #555; display: flex; gap: 8px; }
+
+/* ── Context menu ── */
+.ctx-menu { position: fixed; background: #1e1e2c; border: 1px solid #2e2e42; border-radius: 8px; padding: 4px 0; min-width: 200px; box-shadow: 0 8px 32px rgba(0,0,0,.6); z-index: 9999; }
+.ctx-item { padding: 7px 14px; font-size: 12px; color: #c0c0d8; cursor: pointer; transition: background .1s; display: flex; align-items: center; gap: 6px; }
+.ctx-item:hover { background: #2a2a3e; color: #e0e0f0; }
+.ctx-indent { padding-left: 22px; color: #888; }
+.ctx-indent:hover { color: #a09be8; }
+.ctx-label { padding: 6px 14px 2px; font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: .8px; }
+.ctx-sep { height: 1px; background: #252535; margin: 3px 0; }
+.ctx-arrow { color: #555; font-size: 11px; }
+.ctx-danger { color: #f0997b; }
+.ctx-danger:hover { background: #2e1a1a; color: #f0997b; }
+
+/* ── Delete dialog ── */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 9998; }
+.dialog { background: #1e1e2c; border: 1px solid #2e2e42; border-radius: 12px; padding: 20px; width: 340px; box-shadow: 0 16px 48px rgba(0,0,0,.7); }
+.dialog-title { font-size: 14px; font-weight: 500; color: #e0e0f0; margin-bottom: 16px; }
+.dialog-option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background .1s; margin-bottom: 6px; border: 1px solid #252535; }
+.dialog-option:hover { background: #252535; border-color: #7f77dd; }
+.dialog-radio { width: 14px; height: 14px; border-radius: 50%; border: 1px solid #555; flex-shrink: 0; margin-top: 2px; }
+.dialog-option-label { font-size: 12px; color: #e0e0f0; margin-bottom: 2px; }
+.dialog-option-sub { font-size: 11px; color: #555; }
+.dialog-dont-ask { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #666; margin: 12px 0 16px; cursor: pointer; }
+.dialog-dont-ask input { accent-color: #7f77dd; cursor: pointer; }
+.dialog-actions { display: flex; justify-content: flex-end; }
+.dialog-btn { background: none; border: 1px solid #2a2a3a; border-radius: 6px; color: #888; font-size: 12px; padding: 6px 16px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all .15s; }
+.dialog-btn:hover { border-color: #7f77dd; color: #a09be8; }
+
+/* ── Library checkboxes ── */
+.lib-th-check { width: 32px; }
+.lib-td-check { width: 32px; padding: 0 8px; cursor: pointer; }
+.lib-check { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #2a2a3a; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; transition: all .15s; }
+.lib-check.checked { background: #7f77dd; border-color: #7f77dd; }
+.lib-selected td { background: #1e1b3a !important; }
+.lib-summary-sel { color: #7f77dd; }
+
+/* ── AI Match placeholder + generic view placeholder ── */
+.view-placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #333; }
+.view-placeholder-icon { font-size: 32px; color: #2a2738; }
+.view-placeholder-title { font-size: 16px; font-weight: 500; color: #444; }
+.view-placeholder-sub { font-size: 12px; color: #333; }
+
+/* ── Drop overlay ────────────────────────────────────────────────────────── */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(10, 10, 14, 0.82);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-zone {
+  border: 2px dashed #7f77dd;
+  border-radius: 20px;
+  padding: 64px 96px;
+  text-align: center;
+  animation: drop-pulse 1.4s ease-in-out infinite;
+}
+
+.drop-icon { font-size: 2.5rem; margin-bottom: 14px; color: #7f77dd; }
+.drop-title { font-size: 1.2rem; font-weight: 600; color: #e8e8f0; margin-bottom: 6px; }
+.drop-sub { font-size: 0.8rem; color: #888; }
+
+@keyframes drop-pulse {
+  0%, 100% { border-color: #7f77dd; box-shadow: 0 0 0 0 rgba(127, 119, 221, 0); }
+  50% { border-color: #a09be8; box-shadow: 0 0 40px rgba(127, 119, 221, 0.18); }
+}
