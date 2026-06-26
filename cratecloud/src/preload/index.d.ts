@@ -34,6 +34,11 @@ declare global {
         deleteTracks: (ids: number[]) => Promise<void>
         moveTracks: (ids: number[], column: string) => Promise<void>
       }
+      editTags: (
+        filepath: string,
+        meta: Record<string, string | undefined>,
+        writeSerato?: boolean
+      ) => Promise<{ success: boolean; filepath: string; serato_written?: boolean; error?: string }>
       analyzeFile: (filepath: string, writeBack?: boolean) => Promise<AnalysisResult>
       analyzeFolder: (folderPath: string, writeBack?: boolean) => Promise<AnalysisResult[]>
       onAnalyzeProgress: (callback: (progress: ProgressEvent) => void) => () => void

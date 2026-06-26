@@ -3,7 +3,7 @@ import { join, extname, basename } from 'path'
 import { readdir, rename, copyFile, unlink, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { analyzeFile, type AnalysisResult } from './audioSidecar'
+import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import { getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn } from './db'
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
@@ -48,6 +48,10 @@ app.whenReady().then(() => {
   })
 
   // ── Audio analysis ────────────────────────────────────────────────────────
+  ipcMain.handle('edit-tags', async (_event, filepath: string, meta: EditTagsMeta, writeSerato = true) => {
+    return editTags(filepath, meta, writeSerato)
+  })
+
   ipcMain.handle('analyze-file', async (_event, filepath: string, writeBack = false) => {
     return analyzeFile(filepath, { writeBack })
   })

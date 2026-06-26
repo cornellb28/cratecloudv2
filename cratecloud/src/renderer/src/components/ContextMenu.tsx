@@ -7,7 +7,7 @@ const MENU_W = 200
 
 export function ContextMenu(): React.JSX.Element | null {
   const { menu, closeMenu } = useContextMenu()
-  const { setActiveTrack, moveTrack, updateTrack, openDeleteDialog } = useLibraryStore()
+  const { setActiveTrack, moveTrack, updateTrack, openDeleteDialog, openEditDialog } = useLibraryStore()
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -60,6 +60,9 @@ export function ContextMenu(): React.JSX.Element | null {
     >
       <div className="ctx-item" onClick={act(() => setActiveTrack(track, col))}>
         Open in Inspector
+      </div>
+      <div className="ctx-item" onClick={act(() => openEditDialog(track, col))}>
+        Edit tags…
       </div>
 
       <div className="ctx-sep" />

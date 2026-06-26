@@ -7,6 +7,7 @@ import { Toolbar } from './components/Toolbar'
 import { BulkBar } from './components/BulkBar'
 import { ContextMenu } from './components/ContextMenu'
 import { DeleteDialog } from './components/DeleteDialog'
+import { EditTagsDialog } from './components/EditTagsDialog'
 import { DropOverlay } from './components/DropOverlay'
 import { BoardView } from './components/board/BoardView'
 import { LibraryView } from './components/library/LibraryView'
@@ -53,6 +54,7 @@ function AppInner(): React.JSX.Element {
       {/* Global overlays */}
       <ContextMenu />
       <DeleteDialog />
+      <EditTagsDialog />
       <DropOverlay />
     </div>
   )

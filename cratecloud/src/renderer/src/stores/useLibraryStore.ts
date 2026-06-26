@@ -76,6 +76,7 @@ type LibraryState = {
   deletePreference: DeletePreference
   importStatus: { current: number; total: number; label: string } | null
   dbReady: boolean
+  editDialog: { track: Track; col: string } | null
 
   initFromDb: () => Promise<void>
   setActiveTab: (tab: string) => void
@@ -95,6 +96,8 @@ type LibraryState = {
   closeDeleteDialog: () => void
   setDeletePreference: (pref: DeletePreference) => void
   setImportStatus: (s: { current: number; total: number; label: string } | null) => void
+  openEditDialog: (track: Track, col: string) => void
+  closeEditDialog: () => void
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -110,6 +113,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   deletePreference: 'ask',
   importStatus: null,
   dbReady: false,
+  editDialog: null,
 
   initFromDb: async () => {
     try {
@@ -309,4 +313,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   setDeletePreference: (pref) => set({ deletePreference: pref }),
 
   setImportStatus: (s) => set({ importStatus: s }),
+
+  openEditDialog: (track, col) => set({ editDialog: { track, col } }),
+  closeEditDialog: () => set({ editDialog: null }),
 }))

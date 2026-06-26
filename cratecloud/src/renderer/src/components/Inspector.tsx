@@ -132,8 +132,77 @@ export function Inspector(): React.JSX.Element {
             </div>
 
             <div>
+              <div className="field-label">Album</div>
+              <input
+                className="field-input"
+                value={form.album ?? ''}
+                placeholder="—"
+                onChange={(e) => handleChange('album', e.target.value)}
+              />
+            </div>
+
+            <div className="field-row">
+              <div>
+                <div className="field-label">Year</div>
+                <input
+                  className="field-input"
+                  value={form.year ?? ''}
+                  placeholder="—"
+                  onChange={(e) => handleChange('year', e.target.value)}
+                />
+              </div>
+              <div>
+                <div className="field-label">Format</div>
+                <input
+                  className="field-input"
+                  value={form.format ?? ''}
+                  placeholder="—"
+                  readOnly
+                  style={{ opacity: 0.6, cursor: 'default' }}
+                />
+              </div>
+            </div>
+
+            <div>
               <div className="field-label">Waveform preview</div>
               <WaveformPreview waveform={activeTrack.waveform} />
+            </div>
+
+            {/* Read-only file metadata */}
+            <div className="insp-tags-section">
+              <div className="insp-tags-title">File tags</div>
+              <div className="insp-tags-grid">
+                <span className="insp-tag-key">Duration</span>
+                <span className="insp-tag-val">{activeTrack.duration_str ?? '—'}</span>
+
+                <span className="insp-tag-key">Size</span>
+                <span className="insp-tag-val">
+                  {activeTrack.file_size_mb != null ? `${activeTrack.file_size_mb} MB` : '—'}
+                </span>
+
+                <span className="insp-tag-key">Camelot</span>
+                <span className="insp-tag-val">{activeTrack.camelot ?? '—'}</span>
+
+                <span className="insp-tag-key">Open Key</span>
+                <span className="insp-tag-val">{activeTrack.openkey ?? '—'}</span>
+
+                {activeTrack.filepath && (
+                  <>
+                    <span className="insp-tag-key">File</span>
+                    <span
+                      className="insp-tag-val insp-tag-path"
+                      title={activeTrack.filepath}
+                    >
+                      {activeTrack.filepath.split('/').pop()}
+                    </span>
+
+                    <span className="insp-tag-key">Folder</span>
+                    <span className="insp-tag-val insp-tag-path" title={activeTrack.filepath}>
+                      {activeTrack.filepath.split('/').slice(0, -1).join('/').split('/').pop() ?? '—'}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="ai-chip">

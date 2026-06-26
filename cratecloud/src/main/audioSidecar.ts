@@ -37,19 +37,64 @@ export type ProgressEvent = {
   file: string
 }
 
-function getSidecarPaths(): { python: string; script: string | null } {
+function getSidecarPaths(): { python: string; analyzeScript: string | null; editScript: string | null } {
   if (is.dev) {
     const root = app.getAppPath()
     return {
       python: join(root, 'sidecar/.venv/bin/python3'),
-      script: join(root, 'sidecar/analyze.py'),
+      analyzeScript: join(root, 'sidecar/analyze.py'),
+      editScript: join(root, 'sidecar/edit_tags.py'),
     }
   }
-  // Production: PyInstaller binary bundled into resources/sidecar
   return {
     python: join(process.resourcesPath, 'sidecar'),
-    script: null,
+    analyzeScript: null,
+    editScript: null,
   }
+}
+
+export type EditTagsMeta = {
+  title?: string
+  artist?: string
+  album?: string
+  genre?: string
+  bpm?: string
+  key?: string
+  year?: string
+}
+
+export type EditTagsResult = {
+  success: boolean
+  filepath: string
+  serato_written?: boolean
+  error?: string
+}
+
+function runScript(python: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(python, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+    child.on('close', (code) => {
+      if (code !== 0 && !stdout) reject(new Error(`Script exited with code ${code}`))
+      else resolve(stdout)
+    })
+    child.on('error', (err) => reject(new Error(`Spawn failed: ${err.message}`)))
+  })
+}
+
+export async function editTags(
+  filepath: string,
+  meta: EditTagsMeta,
+  writeSerato = true
+): Promise<EditTagsResult> {
+  const { python, editScript } = getSidecarPaths()
+  const args = editScript
+    ? [editScript, filepath, '--meta', JSON.stringify(meta)]
+    : [filepath, '--meta', JSON.stringify(meta)]
+  if (!writeSerato) args.push('--no-serato')
+  const stdout = await runScript(python, args)
+  return JSON.parse(stdout) as EditTagsResult
 }
 
 export function analyzeFile(
@@ -57,8 +102,8 @@ export function analyzeFile(
   options: { writeBack?: boolean; onProgress?: (msg: ProgressEvent) => void } = {}
 ): Promise<AnalysisResult> {
   return new Promise((resolve, reject) => {
-    const { python, script } = getSidecarPaths()
-    const args = script ? [script, filepath] : [filepath]
+    const { python, analyzeScript } = getSidecarPaths()
+    const args = analyzeScript ? [analyzeScript, filepath] : [filepath]
     if (options.writeBack) args.push('--write-back')
 
     const child = spawn(python, args, {

@@ -119,6 +119,14 @@
 /* ── Grid layout helpers ── */
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
+/* ── Inspector file tags section ── */
+.insp-tags-section { border-top: 1px solid #1e1e2a; padding-top: 10px; }
+.insp-tags-title { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: #444; margin-bottom: 8px; }
+.insp-tags-grid { display: grid; grid-template-columns: 64px 1fr; gap: 4px 8px; }
+.insp-tag-key { font-size: 10px; color: #555; padding-top: 1px; }
+.insp-tag-val { font-size: 11px; color: #888; font-family: 'IBM Plex Mono', monospace; word-break: break-all; }
+.insp-tag-path { color: #666; word-break: break-word; }
+
 /* ── Import progress in titlebar ── */
 .tb-import-status { font-size: 11px; color: #7f77dd; font-family: 'IBM Plex Mono', monospace; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
@@ -201,6 +209,23 @@
 .dialog-actions { display: flex; justify-content: flex-end; }
 .dialog-btn { background: none; border: 1px solid #2a2a3a; border-radius: 6px; color: #888; font-size: 12px; padding: 6px 16px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all .15s; }
 .dialog-btn:hover { border-color: #7f77dd; color: #a09be8; }
+.dialog-btn-primary { background: #7f77dd; border-color: #7f77dd; color: #fff; margin-left: 8px; }
+.dialog-btn-primary:hover { background: #9b8ed4; border-color: #9b8ed4; color: #fff; }
+.dialog-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Edit tags dialog ── */
+.edit-dialog { width: 420px; }
+.edit-filepath { font-size: 10px; color: #555; font-family: 'IBM Plex Mono', monospace; margin-bottom: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-grid { display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; align-items: center; margin-bottom: 16px; }
+.edit-label { font-size: 11px; color: #888; text-align: right; }
+.edit-input { background: #12121a; border: 1px solid #2a2a3a; border-radius: 6px; color: #e0e0f0; font-size: 12px; padding: 6px 10px; font-family: 'DM Sans', sans-serif; width: 100%; box-sizing: border-box; transition: border-color .15s; }
+.edit-input:focus { outline: none; border-color: #7f77dd; }
+.edit-input-narrow { width: 120px; }
+.edit-write-toggle { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #666; margin-bottom: 14px; cursor: pointer; }
+.edit-write-toggle input { accent-color: #7f77dd; cursor: pointer; }
+.edit-serato-badge { background: #1d2240; color: #7f77dd; font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid #2a2a4a; font-family: 'IBM Plex Mono', monospace; }
+.edit-error { font-size: 11px; color: #f0997b; margin-bottom: 12px; }
+.edit-success { font-size: 11px; color: #1d9e75; margin-bottom: 12px; }
 
 /* ── Library checkboxes ── */
 .lib-th-check { width: 32px; }

@@ -4,6 +4,13 @@ import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
 
 const api = {
   // ── Audio analysis ─────────────────────────────────────────────────────
+  editTags: (
+    filepath: string,
+    meta: Record<string, string | undefined>,
+    writeSerato?: boolean
+  ): Promise<{ success: boolean; filepath: string; serato_written?: boolean; error?: string }> =>
+    ipcRenderer.invoke('edit-tags', filepath, meta, writeSerato ?? true),
+
   analyzeFile: (filepath: string, writeBack?: boolean): Promise<AnalysisResult> =>
     ipcRenderer.invoke('analyze-file', filepath, writeBack ?? false),
 
