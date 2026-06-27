@@ -44,41 +44,61 @@ def read_existing_tags(filepath: str) -> dict:
     tags = {
         'title': None, 'artist': None, 'album': None, 'genre': None,
         'track': None, 'year': None, 'bpm_tag': None, 'key_tag': None,
+        'remixer': None, 'grouping': None, 'composer': None, 'comment': None, 'label': None,
     }
     ext = os.path.splitext(filepath)[1].lower()
     try:
         if ext == '.mp3':
             easy = EasyID3(filepath)
-            tags['title']  = (easy.get('title')       or [None])[0]
-            tags['artist'] = (easy.get('artist')      or [None])[0]
-            tags['album']  = (easy.get('album')       or [None])[0]
-            tags['genre']  = (easy.get('genre')       or [None])[0]
-            tags['track']  = (easy.get('tracknumber') or [None])[0]
-            tags['year']   = (easy.get('date')        or [None])[0]
+            tags['title']    = (easy.get('title')       or [None])[0]
+            tags['artist']   = (easy.get('artist')      or [None])[0]
+            tags['album']    = (easy.get('album')       or [None])[0]
+            tags['genre']    = (easy.get('genre')       or [None])[0]
+            tags['track']    = (easy.get('tracknumber') or [None])[0]
+            tags['year']     = (easy.get('date')        or [None])[0]
+            tags['composer'] = (easy.get('composer')    or [None])[0]
+            tags['grouping'] = (easy.get('grouping')    or [None])[0]
             raw = ID3(filepath)
             if 'TBPM' in raw:
                 tags['bpm_tag'] = str(raw['TBPM'])
             if 'TKEY' in raw:
                 tags['key_tag'] = str(raw['TKEY'])
+            if 'TPE4' in raw:
+                tags['remixer'] = str(raw['TPE4'])
+            if 'TPUB' in raw:
+                tags['label'] = str(raw['TPUB'])
+            # COMM frame — get the first comment text
+            comm_keys = [k for k in raw.keys() if k.startswith('COMM')]
+            if comm_keys:
+                tags['comment'] = str(raw[comm_keys[0]])
         elif ext == '.flac':
             audio = FLAC(filepath)
-            tags['title']   = (audio.get('title')       or [None])[0]
-            tags['artist']  = (audio.get('artist')      or [None])[0]
-            tags['album']   = (audio.get('album')       or [None])[0]
-            tags['genre']   = (audio.get('genre')       or [None])[0]
-            tags['track']   = (audio.get('tracknumber') or [None])[0]
-            tags['year']    = (audio.get('date')        or [None])[0]
-            tags['bpm_tag'] = (audio.get('bpm')         or [None])[0]
-            tags['key_tag'] = (audio.get('key')         or [None])[0]
+            tags['title']    = (audio.get('title')       or [None])[0]
+            tags['artist']   = (audio.get('artist')      or [None])[0]
+            tags['album']    = (audio.get('album')       or [None])[0]
+            tags['genre']    = (audio.get('genre')       or [None])[0]
+            tags['track']    = (audio.get('tracknumber') or [None])[0]
+            tags['year']     = (audio.get('date')        or [None])[0]
+            tags['bpm_tag']  = (audio.get('bpm')         or [None])[0]
+            tags['key_tag']  = (audio.get('key')         or [None])[0]
+            tags['remixer']  = (audio.get('remixer')     or [None])[0]
+            tags['grouping'] = (audio.get('grouping')    or [None])[0]
+            tags['composer'] = (audio.get('composer')    or [None])[0]
+            tags['comment']  = (audio.get('comment')     or [None])[0]
+            tags['label']    = (audio.get('organization') or [None])[0]
         elif ext == '.m4a':
             audio = MP4(filepath)
             t = audio.tags or {}
-            tags['title']   = (t.get('\xa9nam') or [None])[0]
-            tags['artist']  = (t.get('\xa9ART') or [None])[0]
-            tags['album']   = (t.get('\xa9alb') or [None])[0]
-            tags['genre']   = (t.get('\xa9gen') or [None])[0]
-            tags['year']    = (t.get('\xa9day') or [None])[0]
-            tags['bpm_tag'] = str(t['tmpo'][0]) if 'tmpo' in t else None
+            tags['title']    = (t.get('\xa9nam') or [None])[0]
+            tags['artist']   = (t.get('\xa9ART') or [None])[0]
+            tags['album']    = (t.get('\xa9alb') or [None])[0]
+            tags['genre']    = (t.get('\xa9gen') or [None])[0]
+            tags['year']     = (t.get('\xa9day') or [None])[0]
+            tags['bpm_tag']  = str(t['tmpo'][0]) if 'tmpo' in t else None
+            tags['composer'] = (t.get('\xa9wrt') or [None])[0]
+            tags['grouping'] = (t.get('\xa9grp') or [None])[0]
+            tags['comment']  = (t.get('\xa9cmt') or [None])[0]
+            tags['label']    = (t.get('----:com.apple.iTunes:LABEL') or [None])[0]
     except Exception:
         pass
     return tags
@@ -200,6 +220,11 @@ def analyze_file(filepath: str, write_back: bool = False) -> dict:
         'genre':        existing_tags['genre'],
         'track':        existing_tags['track'],
         'year':         existing_tags['year'],
+        'remixer':      existing_tags['remixer'],
+        'grouping':     existing_tags['grouping'],
+        'composer':     existing_tags['composer'],
+        'comment':      existing_tags['comment'],
+        'label':        existing_tags['label'],
         'bpm':          analysis['bpm'],
         'key':          analysis['key'],
         'camelot':      analysis['camelot'],

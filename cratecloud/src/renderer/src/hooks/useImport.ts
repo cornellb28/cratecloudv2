@@ -9,7 +9,7 @@ function getExt(path: string): string {
 }
 
 export function useImport() {
-  const { addTracks, setImportStatus } = useLibraryStore()
+  const { addTracks, setImportStatus, allTracks } = useLibraryStore()
   const busyRef = useRef(false)
 
   const importPaths = useCallback(
@@ -20,6 +20,16 @@ export function useImport() {
       try {
         setImportStatus({ current: 0, total: 0, label: 'Classifying…' })
         const { files, folders } = await window.api.fs.classifyDropped(paths)
+
+        // Build a set of every filepath already in the library
+        const knownPaths = new Set(
+          allTracks()
+            .map((t) => t.filepath)
+            .filter((p): p is string => !!p),
+        )
+
+        let skipped = 0
+
         const audioFiles = files.filter((p) => AUDIO_EXTENSIONS.has(getExt(p)))
 
         for (const folderPath of folders) {
@@ -29,24 +39,39 @@ export function useImport() {
           })
           try {
             const results = await window.api.analyzeFolder(folderPath)
-            await addTracks(results, folderName)
+            const fresh = results.filter((r) => !r.filepath || !knownPaths.has(r.filepath))
+            skipped += results.length - fresh.length
+            if (fresh.length) await addTracks(fresh, folderName)
           } finally {
             removeListener()
           }
         }
 
-        for (let i = 0; i < audioFiles.length; i++) {
-          const name = audioFiles[i].split('/').pop() ?? ''
-          setImportStatus({ current: i + 1, total: audioFiles.length, label: name })
-          const result = await window.api.analyzeFile(audioFiles[i])
+        // Filter individual files before analyzing — avoids running Python on known paths
+        const newAudioFiles = audioFiles.filter((p) => !knownPaths.has(p))
+        skipped += audioFiles.length - newAudioFiles.length
+
+        for (let i = 0; i < newAudioFiles.length; i++) {
+          const name = newAudioFiles[i].split('/').pop() ?? ''
+          setImportStatus({ current: i + 1, total: newAudioFiles.length, label: name })
+          const result = await window.api.analyzeFile(newAudioFiles[i])
           await addTracks([result])
+        }
+
+        if (skipped > 0) {
+          setImportStatus({
+            current: 0,
+            total: 0,
+            label: `${skipped} duplicate${skipped > 1 ? 's' : ''} skipped`,
+          })
+          await new Promise((r) => setTimeout(r, 2000))
         }
       } finally {
         setImportStatus(null)
         busyRef.current = false
       }
     },
-    [addTracks, setImportStatus],
+    [addTracks, setImportStatus, allTracks],
   )
 
   const importFromDialog = useCallback(

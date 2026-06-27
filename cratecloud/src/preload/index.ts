@@ -50,6 +50,24 @@ const api = {
       ipcRenderer.invoke('fs:classifyDropped', paths),
   },
 
+  // ── Crates ──────────────────────────────────────────────────────────────────
+  crate: {
+    getAll: (): Promise<{ id: number; name: string; color: string; created_at: number }[]> =>
+      ipcRenderer.invoke('crate:getAll'),
+    getAllTrackIds: (): Promise<{ crate_id: number; track_id: number }[]> =>
+      ipcRenderer.invoke('crate:getAllTrackIds'),
+    insert: (name: string, color: string): Promise<number> =>
+      ipcRenderer.invoke('crate:insert', name, color),
+    update: (id: number, name: string, color: string): Promise<void> =>
+      ipcRenderer.invoke('crate:update', id, name, color),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('crate:delete', id),
+    addTracks: (crateId: number, trackIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('crate:addTracks', crateId, trackIds),
+    removeTracks: (crateId: number, trackIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('crate:removeTracks', crateId, trackIds),
+  },
+
   // ── Window controls ─────────────────────────────────────────────────────
   window: {
     close: () => ipcRenderer.send('window:close'),

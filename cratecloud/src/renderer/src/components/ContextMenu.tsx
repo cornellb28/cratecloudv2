@@ -7,7 +7,10 @@ const MENU_W = 200
 
 export function ContextMenu(): React.JSX.Element | null {
   const { menu, closeMenu } = useContextMenu()
-  const { setActiveTrack, moveTrack, updateTrack, openDeleteDialog, openEditDialog } = useLibraryStore()
+  const {
+    setActiveTrack, moveTrack, updateTrack, openDeleteDialog, openEditDialog,
+    crates, activeCrateId, addTracksToCrate, removeTracksFromCrate,
+  } = useLibraryStore()
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -72,6 +75,34 @@ export function ContextMenu(): React.JSX.Element | null {
           <span className="ctx-arrow">›</span> {c}
         </div>
       ))}
+
+      {crates.length > 0 && (
+        <>
+          <div className="ctx-sep" />
+          <div className="ctx-label">Add to crate</div>
+          {crates.map((c) => (
+            <div
+              key={c.id}
+              className="ctx-item ctx-indent"
+              onClick={act(() => addTracksToCrate(c.id, [track.id]))}
+            >
+              <span className="ctx-crate-dot" style={{ background: c.color }} />
+              {c.name}
+            </div>
+          ))}
+          {activeCrateId !== null && (
+            <>
+              <div className="ctx-sep" />
+              <div
+                className="ctx-item"
+                onClick={act(() => removeTracksFromCrate(activeCrateId, [track.id]))}
+              >
+                Remove from crate
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {track.filepath && (
         <>

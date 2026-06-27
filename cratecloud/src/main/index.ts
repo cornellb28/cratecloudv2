@@ -4,7 +4,11 @@ import { readdir, rename, copyFile, unlink, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
-import { getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn } from './db'
+import {
+  getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
+  getCrates, insertCrate, updateCrateRow, deleteCrateRow,
+  getAllCrateTrackIds, addTracksToCrate, removeTracksFromCrate,
+} from './db'
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
 
@@ -149,6 +153,15 @@ app.whenReady().then(() => {
   ipcMain.handle('db:moveTracks', (_event, ids: number[], column: string) =>
     moveTracksToColumn(ids, column)
   )
+
+  // ── Crates ────────────────────────────────────────────────────────────────
+  ipcMain.handle('crate:getAll', () => getCrates())
+  ipcMain.handle('crate:getAllTrackIds', () => getAllCrateTrackIds())
+  ipcMain.handle('crate:insert', (_event, name: string, color: string) => insertCrate(name, color))
+  ipcMain.handle('crate:update', (_event, id: number, name: string, color: string) => updateCrateRow(id, name, color))
+  ipcMain.handle('crate:delete', (_event, id: number) => deleteCrateRow(id))
+  ipcMain.handle('crate:addTracks', (_event, crateId: number, trackIds: number[]) => addTracksToCrate(crateId, trackIds))
+  ipcMain.handle('crate:removeTracks', (_event, crateId: number, trackIds: number[]) => removeTracksFromCrate(crateId, trackIds))
 
   // ── Window controls ───────────────────────────────────────────────────────
   ipcMain.on('window:close', (event) => {

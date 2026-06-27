@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Track, Setlist } from '../types/track'
+import type { Track, Setlist, Crate } from '../types/track'
 
 // Mirrors db.ts DbTrackRow — keep in sync
 type DbTrackRow = {
@@ -8,7 +8,10 @@ type DbTrackRow = {
   filepath: string | null; camelot: string | null; openkey: string | null
   duration_str: string | null; duration_sec: number | null
   file_size_mb: number | null; format: string | null
-  album: string | null; year: string | null; waveform: string | null
+  album: string | null; year: string | null
+  remixer: string | null; grouping: string | null; composer: string | null
+  comment: string | null; label: string | null
+  waveform: string | null
 }
 
 export type ImportedTrackData = {
@@ -29,6 +32,11 @@ export type ImportedTrackData = {
   format?: string
   album?: string | null
   year?: string | null
+  remixer?: string | null
+  grouping?: string | null
+  composer?: string | null
+  comment?: string | null
+  label?: string | null
 }
 
 export type DeletePreference = 'ask' | 'remove' | 'trash'
@@ -60,6 +68,11 @@ function rowToTrack(row: DbTrackRow): Track {
     format: row.format ?? undefined,
     album: row.album ?? undefined,
     year: row.year ?? undefined,
+    remixer: row.remixer ?? undefined,
+    grouping: row.grouping ?? undefined,
+    composer: row.composer ?? undefined,
+    comment: row.comment ?? undefined,
+    label: row.label ?? undefined,
   }
 }
 
@@ -77,6 +90,9 @@ type LibraryState = {
   importStatus: { current: number; total: number; label: string } | null
   dbReady: boolean
   editDialog: { track: Track; col: string } | null
+  crates: Crate[]
+  activeCrateId: number | null
+  crateDialog: { mode: 'create' } | { mode: 'edit'; crate: Crate } | null
 
   initFromDb: () => Promise<void>
   setActiveTab: (tab: string) => void
@@ -98,6 +114,15 @@ type LibraryState = {
   setImportStatus: (s: { current: number; total: number; label: string } | null) => void
   openEditDialog: (track: Track, col: string) => void
   closeEditDialog: () => void
+  setActiveCrate: (id: number | null) => void
+  openCrateDialog: (mode: 'create') => void
+  openCrateEditDialog: (crate: Crate) => void
+  closeCrateDialog: () => void
+  createCrate: (name: string, color: string) => Promise<void>
+  updateCrate: (id: number, name: string, color: string) => Promise<void>
+  deleteCrate: (id: number) => Promise<void>
+  addTracksToCrate: (crateId: number, trackIds: number[]) => Promise<void>
+  removeTracksFromCrate: (crateId: number, trackIds: number[]) => Promise<void>
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -114,20 +139,37 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importStatus: null,
   dbReady: false,
   editDialog: null,
+  crates: [],
+  activeCrateId: null,
+  crateDialog: null,
 
   initFromDb: async () => {
     try {
-      const rows = await window.api.db.getTracks()
+      const [rows, crateRows, crateTrackRows] = await Promise.all([
+        window.api.db.getTracks(),
+        window.api.crate.getAll(),
+        window.api.crate.getAllTrackIds(),
+      ])
       const columns: Record<string, Track[]> = { ...EMPTY_COLUMNS }
-      for (const col of Object.keys(columns)) {
-        columns[col] = []
-      }
+      for (const col of Object.keys(columns)) columns[col] = []
       rows.forEach((row) => {
         const track = rowToTrack(row)
         const col = columns[row.column_name] ?? columns['Untagged']
         col.push(track)
       })
-      set({ columns, dbReady: true })
+      // Build crate trackId Sets
+      const trackIdsByCrate = new Map<number, Set<number>>()
+      for (const { crate_id, track_id } of crateTrackRows) {
+        if (!trackIdsByCrate.has(crate_id)) trackIdsByCrate.set(crate_id, new Set())
+        trackIdsByCrate.get(crate_id)!.add(track_id)
+      }
+      const crates: Crate[] = crateRows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        color: c.color,
+        trackIds: trackIdsByCrate.get(c.id) ?? new Set(),
+      }))
+      set({ columns, crates, dbReady: true })
     } catch (err) {
       console.error('[db] initFromDb failed:', err)
       set({ dbReady: true })
@@ -225,6 +267,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         format: r.format ?? null,
         album: r.album ?? null,
         year: r.year ?? null,
+        remixer: r.remixer ?? '',
+        grouping: r.grouping ?? '',
+        composer: r.composer ?? '',
+        comment: r.comment ?? '',
+        label: r.label ?? '',
         waveform: r.waveform ? JSON.stringify(r.waveform) : null,
       }
     })
@@ -260,6 +307,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         format: row.format ?? undefined,
         album: row.album ?? undefined,
         year: row.year ?? undefined,
+        remixer: row.remixer ?? undefined,
+        grouping: row.grouping ?? undefined,
+        composer: row.composer ?? undefined,
+        comment: row.comment ?? undefined,
+        label: row.label ?? undefined,
       }
       if (row.column_name === 'Tagged') tagged.push(track)
       else untagged.push(track)
@@ -316,4 +368,53 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   openEditDialog: (track, col) => set({ editDialog: { track, col } }),
   closeEditDialog: () => set({ editDialog: null }),
+
+  setActiveCrate: (id) => set({ activeCrateId: id }),
+  openCrateDialog: (mode) => set({ crateDialog: { mode } }),
+  openCrateEditDialog: (crate) => set({ crateDialog: { mode: 'edit', crate } }),
+  closeCrateDialog: () => set({ crateDialog: null }),
+
+  createCrate: async (name, color) => {
+    const id = await window.api.crate.insert(name, color)
+    set((s) => ({ crates: [...s.crates, { id, name, color, trackIds: new Set() }] }))
+  },
+
+  updateCrate: async (id, name, color) => {
+    await window.api.crate.update(id, name, color)
+    set((s) => ({
+      crates: s.crates.map((c) => (c.id === id ? { ...c, name, color } : c)),
+    }))
+  },
+
+  deleteCrate: async (id) => {
+    await window.api.crate.delete(id)
+    set((s) => ({
+      crates: s.crates.filter((c) => c.id !== id),
+      activeCrateId: s.activeCrateId === id ? null : s.activeCrateId,
+    }))
+  },
+
+  addTracksToCrate: async (crateId, trackIds) => {
+    await window.api.crate.addTracks(crateId, trackIds)
+    set((s) => ({
+      crates: s.crates.map((c) => {
+        if (c.id !== crateId) return c
+        const next = new Set(c.trackIds)
+        trackIds.forEach((id) => next.add(id))
+        return { ...c, trackIds: next }
+      }),
+    }))
+  },
+
+  removeTracksFromCrate: async (crateId, trackIds) => {
+    await window.api.crate.removeTracks(crateId, trackIds)
+    set((s) => ({
+      crates: s.crates.map((c) => {
+        if (c.id !== crateId) return c
+        const next = new Set(c.trackIds)
+        trackIds.forEach((id) => next.delete(id))
+        return { ...c, trackIds: next }
+      }),
+    }))
+  },
 }))

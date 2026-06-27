@@ -17,7 +17,24 @@ export type Track = {
   format?: string
   album?: string
   year?: string
+  remixer?: string
+  grouping?: string
+  composer?: string
+  comment?: string
+  label?: string
 }
+
+export type Crate = {
+  id: number
+  name: string
+  color: string
+  trackIds: Set<number>
+}
+
+export const CRATE_COLORS = [
+  '#7f77dd', '#378add', '#1d9e75', '#d85a30', '#d4537e',
+  '#ba7517', '#3d9e9e', '#9e3d9e', '#5a9e3d', '#c45c8a',
+]
 
 export type Setlist = {
   id: string

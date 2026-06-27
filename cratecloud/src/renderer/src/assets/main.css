@@ -22,13 +22,43 @@
 .main { display: flex; flex: 1; overflow: hidden; }
 
 /* ── Sidebar ── */
-.sidebar { width: 180px; background: #12121a; border-right: 1px solid #1e1e2a; padding: 12px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.sidebar { width: 180px; background: #12121a; border-right: 1px solid #1e1e2a; padding: 12px 0; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; position: relative; }
 .sb-section { font-size: 10px; font-weight: 500; letter-spacing: 1px; color: #444; text-transform: uppercase; padding: 12px 16px 6px; }
-.sb-item { display: flex; align-items: center; gap: 8px; padding: 7px 16px; cursor: pointer; font-size: 12px; color: #666; transition: all .15s; }
+.sb-section-row { display: flex; align-items: center; padding: 12px 10px 6px 16px; }
+.sb-section-row .sb-section { padding: 0; flex: 1; }
+.sb-add-btn { background: none; border: 1px solid #2a2a3a; border-radius: 4px; color: #555; font-size: 14px; line-height: 1; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.sb-add-btn:hover { border-color: #7f77dd; color: #a09be8; }
+.sb-item { display: flex; align-items: center; gap: 8px; padding: 7px 16px; cursor: pointer; font-size: 12px; color: #666; transition: all .15s; user-select: none; }
 .sb-item:hover { color: #a09be8; background: #1a1a26; }
 .sb-item.active { color: #a09be8; background: #1a1a26; border-right: 2px solid #7f77dd; }
+.sb-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.sb-count { margin-left: auto; font-size: 10px; background: #1e1e2a; padding: 2px 6px; border-radius: 10px; color: #555; }
+.sb-count { margin-left: auto; font-size: 10px; background: #1e1e2a; padding: 2px 6px; border-radius: 10px; color: #555; flex-shrink: 0; }
+.sb-empty { font-size: 11px; color: #333; padding: 4px 16px 8px; font-style: italic; }
+
+/* ── Crate dialog ── */
+.crate-dialog { width: 320px; }
+.crate-form { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 4px; }
+.crate-label { font-size: 11px; color: #666; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
+.crate-input { background: #1a1a26; border: 1px solid #2a2a3a; border-radius: 7px; color: #e8e8f0; font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 8px 10px; outline: none; width: 100%; box-sizing: border-box; transition: border-color .15s; }
+.crate-input:focus { border-color: #7f77dd; }
+.crate-colors { display: flex; gap: 8px; flex-wrap: wrap; }
+.crate-color-swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: transform .15s, border-color .15s; padding: 0; }
+.crate-color-swatch:hover { transform: scale(1.15); }
+.crate-color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.3); }
+.crate-delete-btn { color: #f0997b; border-color: #d85a30 !important; }
+.crate-delete-btn:hover { background: #d85a30 !important; color: #fff !important; }
+
+/* ── Crate banner in LibraryView ── */
+.lib-crate-banner { display: flex; align-items: center; gap: 8px; padding: 7px 16px; background: #15151f; border-bottom: 2px solid; flex-shrink: 0; }
+.lib-crate-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.lib-crate-name { font-size: 12px; font-weight: 500; color: #ccc; flex: 1; }
+.lib-crate-count { font-size: 11px; color: #555; }
+.lib-crate-clear { background: none; border: none; color: #444; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: color .15s; }
+.lib-crate-clear:hover { color: #aaa; }
+
+/* ── Context menu crate dot ── */
+.ctx-crate-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; margin-right: 4px; }
 
 /* ── Content area ── */
 .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }

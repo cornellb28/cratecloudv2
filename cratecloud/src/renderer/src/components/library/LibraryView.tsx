@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import { useContextMenu } from '../../contexts/ContextMenuContext'
 import { COLUMN_COLORS } from '../../types/track'
@@ -7,25 +7,29 @@ import type { Track } from '../../types/track'
 type GroupedTracks = { name: string; color: string; tracks: Track[] }
 
 export function LibraryView(): React.JSX.Element {
-  const { columns, setActiveTrack, activeTrack, searchQuery, selected, toggleSelect } =
-    useLibraryStore()
+  const {
+    columns, setActiveTrack, activeTrack, searchQuery, selected, toggleSelect,
+    crates, activeCrateId, setActiveCrate,
+  } = useLibraryStore()
   const { openMenu } = useContextMenu()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const q = searchQuery.toLowerCase()
+  const activeCrate = activeCrateId !== null ? crates.find((c) => c.id === activeCrateId) : null
 
   const groups: GroupedTracks[] = Object.entries(columns)
     .map(([col, tracks]) => ({
       name: col,
       color: COLUMN_COLORS[col] ?? '#555',
-      tracks: q
-        ? tracks.filter(
-            (t) =>
-              t.title.toLowerCase().includes(q) ||
-              t.artist.toLowerCase().includes(q) ||
-              t.genre.toLowerCase().includes(q),
-          )
-        : tracks,
+      tracks: tracks.filter((t) => {
+        if (activeCrate && !activeCrate.trackIds.has(t.id)) return false
+        if (!q) return true
+        return (
+          t.title.toLowerCase().includes(q) ||
+          t.artist.toLowerCase().includes(q) ||
+          t.genre.toLowerCase().includes(q)
+        )
+      }),
     }))
     .filter((g) => g.tracks.length > 0)
 
@@ -45,6 +49,14 @@ export function LibraryView(): React.JSX.Element {
 
   return (
     <div className="library">
+      {activeCrate && (
+        <div className="lib-crate-banner" style={{ borderColor: activeCrate.color }}>
+          <span className="lib-crate-dot" style={{ background: activeCrate.color }} />
+          <span className="lib-crate-name">{activeCrate.name}</span>
+          <span className="lib-crate-count">{activeCrate.trackIds.size} tracks</span>
+          <button className="lib-crate-clear" onClick={() => setActiveCrate(null)} title="Show all tracks">✕</button>
+        </div>
+      )}
       <div className="lib-summary">
         {totalTracks} track{totalTracks !== 1 ? 's' : ''} · {groups.length} group{groups.length !== 1 ? 's' : ''}
         {selected.size > 0 && (
@@ -69,7 +81,7 @@ export function LibraryView(): React.JSX.Element {
         </thead>
         <tbody>
           {groups.map(({ name, color, tracks }) => (
-            <>
+            <React.Fragment key={name}>
               <tr
                 key={`group-${name}`}
                 className="lib-group-row"
@@ -128,7 +140,7 @@ export function LibraryView(): React.JSX.Element {
                     </tr>
                   )
                 })}
-            </>
+            </React.Fragment>
           ))}
         </tbody>
       </table>

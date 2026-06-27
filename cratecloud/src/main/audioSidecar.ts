@@ -15,6 +15,11 @@ export type AnalysisResult = {
   genre?: string | null
   track?: string | null
   year?: string | null
+  remixer?: string | null
+  grouping?: string | null
+  composer?: string | null
+  comment?: string | null
+  label?: string | null
   bpm?: number
   key?: string
   camelot?: string
@@ -61,6 +66,11 @@ export type EditTagsMeta = {
   bpm?: string
   key?: string
   year?: string
+  remixer?: string
+  grouping?: string
+  composer?: string
+  comment?: string
+  label?: string
 }
 
 export type EditTagsResult = {

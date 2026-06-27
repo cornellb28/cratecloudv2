@@ -21,10 +21,22 @@ export type DbTrackRow = {
   format: string | null
   album: string | null
   year: string | null
+  remixer: string | null
+  grouping: string | null
+  composer: string | null
+  comment: string | null
+  label: string | null
   waveform: string | null
 }
 
 export type DbTrackInsert = Omit<DbTrackRow, 'id'>
+
+export type CrateRow = {
+  id: number
+  name: string
+  color: string
+  created_at: number
+}
 
 let _db: Database.Database | null = null
 
@@ -32,6 +44,9 @@ function db(): Database.Database {
   if (!_db) {
     _db = new Database(join(app.getPath('userData'), 'library.db'))
     _db.pragma('journal_mode = WAL')
+    _db.pragma('foreign_keys = ON')
+
+    // Stage 1: create all tables (always safe — IF NOT EXISTS)
     _db.exec(`
       CREATE TABLE IF NOT EXISTS tracks (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,9 +67,56 @@ function db(): Database.Database {
         format       TEXT,
         album        TEXT,
         year         TEXT,
+        remixer      TEXT,
+        grouping     TEXT,
+        composer     TEXT,
+        comment      TEXT,
+        label        TEXT,
         waveform     TEXT
       );
+      CREATE TABLE IF NOT EXISTS _schema_migrations (name TEXT PRIMARY KEY);
+      INSERT OR IGNORE INTO _schema_migrations VALUES ('add_extended_fields_v2');
+      CREATE TABLE IF NOT EXISTS crates (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL,
+        color      TEXT    NOT NULL DEFAULT '#7f77dd',
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
+      CREATE TABLE IF NOT EXISTS crate_tracks (
+        crate_id   INTEGER NOT NULL REFERENCES crates(id) ON DELETE CASCADE,
+        track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        added_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        PRIMARY KEY (crate_id, track_id)
+      );
     `)
+
+    // Stage 2: ALTER TABLE for existing DBs missing columns
+    const existing = _db.prepare('PRAGMA table_info(tracks)').all() as { name: string }[]
+    const colNames = new Set(existing.map((c) => c.name))
+    for (const col of ['remixer', 'grouping', 'composer', 'comment', 'label']) {
+      if (!colNames.has(col)) {
+        _db.exec(`ALTER TABLE tracks ADD COLUMN ${col} TEXT`)
+      }
+    }
+
+    // Stage 3: deduplicate tracks before adding unique index
+    // (pre-existing DBs may have duplicates from before INSERT OR IGNORE was added)
+    _db.exec(`
+      DELETE FROM tracks
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM tracks WHERE filepath IS NOT NULL GROUP BY filepath
+      ) AND filepath IS NOT NULL
+    `)
+
+    // Stage 4: unique filepath index — separate so a failure here never blocks the rest
+    try {
+      _db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_filepath
+         ON tracks(filepath) WHERE filepath IS NOT NULL`
+      )
+    } catch {
+      // Index may already exist with a different definition; non-fatal
+    }
   }
   return _db
 }
@@ -66,12 +128,14 @@ export function getAllTracks(): DbTrackRow[] {
 export function insertTracks(rows: DbTrackInsert[]): number[] {
   if (!rows.length) return []
   const stmt = db().prepare(`
-    INSERT INTO tracks
+    INSERT OR IGNORE INTO tracks
       (title, artist, bpm, key_val, genre, energy, column_name, folder, filepath,
-       camelot, openkey, duration_str, duration_sec, file_size_mb, format, album, year, waveform)
+       camelot, openkey, duration_str, duration_sec, file_size_mb, format, album, year,
+       remixer, grouping, composer, comment, label, waveform)
     VALUES
       (@title, @artist, @bpm, @key_val, @genre, @energy, @column_name, @folder, @filepath,
-       @camelot, @openkey, @duration_str, @duration_sec, @file_size_mb, @format, @album, @year, @waveform)
+       @camelot, @openkey, @duration_str, @duration_sec, @file_size_mb, @format, @album, @year,
+       @remixer, @grouping, @composer, @comment, @label, @waveform)
   `)
   const insertAll = db().transaction((rows: DbTrackInsert[]) =>
     rows.map((row) => Number(stmt.run(row).lastInsertRowid))
@@ -100,4 +164,45 @@ export function moveTracksToColumn(ids: number[], column_name: string): void {
   db()
     .prepare(`UPDATE tracks SET column_name = ? WHERE id IN (SELECT value FROM json_each(?))`)
     .run(column_name, JSON.stringify(ids))
+}
+
+// ── Crates ────────────────────────────────────────────────────────────────────
+
+export function getCrates(): CrateRow[] {
+  return db().prepare('SELECT * FROM crates ORDER BY created_at').all() as CrateRow[]
+}
+
+export function insertCrate(name: string, color: string): number {
+  return Number(
+    db().prepare('INSERT INTO crates (name, color) VALUES (?, ?)').run(name, color).lastInsertRowid
+  )
+}
+
+export function updateCrateRow(id: number, name: string, color: string): void {
+  db().prepare('UPDATE crates SET name = ?, color = ? WHERE id = ?').run(name, color, id)
+}
+
+export function deleteCrateRow(id: number): void {
+  db().prepare('DELETE FROM crates WHERE id = ?').run(id)
+}
+
+export function getAllCrateTrackIds(): { crate_id: number; track_id: number }[] {
+  return db()
+    .prepare('SELECT crate_id, track_id FROM crate_tracks ORDER BY added_at')
+    .all() as { crate_id: number; track_id: number }[]
+}
+
+export function addTracksToCrate(crateId: number, trackIds: number[]): void {
+  if (!trackIds.length) return
+  const stmt = db().prepare('INSERT OR IGNORE INTO crate_tracks (crate_id, track_id) VALUES (?, ?)')
+  db().transaction(() => { for (const id of trackIds) stmt.run(crateId, id) })()
+}
+
+export function removeTracksFromCrate(crateId: number, trackIds: number[]): void {
+  if (!trackIds.length) return
+  db()
+    .prepare(
+      `DELETE FROM crate_tracks WHERE crate_id = ? AND track_id IN (SELECT value FROM json_each(?))`
+    )
+    .run(crateId, JSON.stringify(trackIds))
 }

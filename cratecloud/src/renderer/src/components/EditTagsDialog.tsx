@@ -9,6 +9,11 @@ type FormFields = {
   bpm: string
   key: string
   year: string
+  remixer: string
+  grouping: string
+  composer: string
+  comment: string
+  label: string
 }
 
 export function EditTagsDialog(): React.JSX.Element | null {
@@ -16,6 +21,7 @@ export function EditTagsDialog(): React.JSX.Element | null {
 
   const [fields, setFields] = useState<FormFields>({
     title: '', artist: '', album: '', genre: '', bpm: '', key: '', year: '',
+    remixer: '', grouping: '', composer: '', comment: '', label: '',
   })
   const [writeToFile, setWriteToFile] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -33,6 +39,11 @@ export function EditTagsDialog(): React.JSX.Element | null {
         bpm: t.bpm ?? '',
         key: t.key ?? '',
         year: t.year ?? '',
+        remixer: t.remixer ?? '',
+        grouping: t.grouping ?? '',
+        composer: t.composer ?? '',
+        comment: t.comment ?? '',
+        label: t.label ?? '',
       })
       setError(null)
       setSeratoNote(null)
@@ -60,9 +71,16 @@ export function EditTagsDialog(): React.JSX.Element | null {
       bpm: fields.bpm,
       key: fields.key,
       year: fields.year || undefined,
+      remixer: fields.remixer,
+      grouping: fields.grouping,
+      composer: fields.composer,
+      comment: fields.comment,
+      label: fields.label,
     }
 
     updateTrack(track.id, storeUpdates)
+
+    let fileError: string | null = null
 
     if (writeToFile && hasFile) {
       try {
@@ -74,22 +92,29 @@ export function EditTagsDialog(): React.JSX.Element | null {
           bpm: fields.bpm || undefined,
           key: fields.key || undefined,
           year: fields.year || undefined,
+          remixer: fields.remixer || undefined,
+          grouping: fields.grouping || undefined,
+          composer: fields.composer || undefined,
+          comment: fields.comment || undefined,
+          label: fields.label || undefined,
         }
         const result = await window.api.editTags(track.filepath!, meta, true)
         if (!result.success) {
-          setError(`File write failed: ${result.error}`)
+          fileError = `File write failed: ${result.error}`
+          setError(fileError)
         } else if (result.serato_written) {
-          setSeratoNote('Tags saved · Serato autotags written')
+          setSeratoNote('Tags saved · Serato updated')
         } else {
           setSeratoNote('Tags saved to file')
         }
       } catch (err) {
-        setError(`Could not write file: ${String(err)}`)
+        fileError = `Could not write file: ${String(err)}`
+        setError(fileError)
       }
     }
 
     setSaving(false)
-    if (!error) closeEditDialog()
+    if (!fileError) closeEditDialog()
   }
 
   return (
@@ -121,6 +146,21 @@ export function EditTagsDialog(): React.JSX.Element | null {
 
           <label className="edit-label">Year</label>
           <input className="edit-input edit-input-narrow" value={fields.year} onChange={update('year')} placeholder="2024" />
+
+          <label className="edit-label">Remixer</label>
+          <input className="edit-input" value={fields.remixer} onChange={update('remixer')} placeholder="Remixer name" />
+
+          <label className="edit-label">Grouping</label>
+          <input className="edit-input" value={fields.grouping} onChange={update('grouping')} placeholder="Grouping" />
+
+          <label className="edit-label">Composer</label>
+          <input className="edit-input" value={fields.composer} onChange={update('composer')} placeholder="Composer" />
+
+          <label className="edit-label">Label</label>
+          <input className="edit-input" value={fields.label} onChange={update('label')} placeholder="Record label" />
+
+          <label className="edit-label">Comment</label>
+          <input className="edit-input" value={fields.comment} onChange={update('comment')} placeholder="Comment" />
         </div>
 
         {hasFile && (

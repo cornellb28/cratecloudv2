@@ -31,12 +31,13 @@ function WaveformPreview({ waveform }: { waveform?: number[] }): React.JSX.Eleme
 export function Inspector(): React.JSX.Element {
   const { activeTrack, activeTrackCol, setActiveTrack, updateTrack } = useLibraryStore()
   const [form, setForm] = useState<Track | null>(null)
-  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveNote, setSaveNote] = useState<string | null>(null)
 
   useEffect(() => {
     if (activeTrack) {
       setForm({ ...activeTrack })
-      setSaved(false)
+      setSaveNote(null)
     }
   }, [activeTrack?.id])
 
@@ -45,12 +46,47 @@ export function Inspector(): React.JSX.Element {
     setForm({ ...form, [field]: value })
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form) return
+    setSaving(true)
+    setSaveNote(null)
+
     updateTrack(form.id, form)
+
+    if (form.filepath) {
+      try {
+        const meta: Record<string, string | undefined> = {
+          title: form.title || undefined,
+          artist: form.artist || undefined,
+          album: form.album || undefined,
+          genre: form.genre || undefined,
+          bpm: form.bpm || undefined,
+          key: form.key || undefined,
+          year: form.year || undefined,
+          remixer: form.remixer || undefined,
+          grouping: form.grouping || undefined,
+          composer: form.composer || undefined,
+          comment: form.comment || undefined,
+          label: form.label || undefined,
+        }
+        const result = await window.api.editTags(form.filepath, meta, true)
+        if (!result.success) {
+          setSaveNote(`File error: ${result.error}`)
+        } else if (result.serato_written) {
+          setSaveNote('Saved · Serato updated')
+        } else {
+          setSaveNote('Saved to file')
+        }
+      } catch (err) {
+        setSaveNote(`File error: ${String(err)}`)
+      }
+    } else {
+      setSaveNote('Saved to library')
+    }
+
+    setSaving(false)
     setActiveTrack(null, null)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1800)
+    setTimeout(() => setSaveNote(null), 2500)
   }
 
   return (
@@ -60,11 +96,11 @@ export function Inspector(): React.JSX.Element {
       </div>
 
       <div className="panel-body">
-        {saved && !activeTrack && (
-          <div className="panel-saved">✓ Saved to library</div>
+        {saveNote && !activeTrack && (
+          <div className="panel-saved">✓ {saveNote}</div>
         )}
 
-        {!activeTrack && !saved && (
+        {!activeTrack && !saveNote && (
           <div className="panel-empty">
             Click any track<br />to inspect &amp; edit
           </div>
@@ -164,6 +200,56 @@ export function Inspector(): React.JSX.Element {
             </div>
 
             <div>
+              <div className="field-label">Remixer</div>
+              <input
+                className="field-input"
+                value={form.remixer ?? ''}
+                placeholder="—"
+                onChange={(e) => handleChange('remixer', e.target.value)}
+              />
+            </div>
+
+            <div>
+              <div className="field-label">Grouping</div>
+              <input
+                className="field-input"
+                value={form.grouping ?? ''}
+                placeholder="—"
+                onChange={(e) => handleChange('grouping', e.target.value)}
+              />
+            </div>
+
+            <div>
+              <div className="field-label">Composer</div>
+              <input
+                className="field-input"
+                value={form.composer ?? ''}
+                placeholder="—"
+                onChange={(e) => handleChange('composer', e.target.value)}
+              />
+            </div>
+
+            <div>
+              <div className="field-label">Label</div>
+              <input
+                className="field-input"
+                value={form.label ?? ''}
+                placeholder="—"
+                onChange={(e) => handleChange('label', e.target.value)}
+              />
+            </div>
+
+            <div>
+              <div className="field-label">Comment</div>
+              <input
+                className="field-input"
+                value={form.comment ?? ''}
+                placeholder="—"
+                onChange={(e) => handleChange('comment', e.target.value)}
+              />
+            </div>
+
+            <div>
               <div className="field-label">Waveform preview</div>
               <WaveformPreview waveform={activeTrack.waveform} />
             </div>
@@ -215,7 +301,9 @@ export function Inspector(): React.JSX.Element {
               ))}
             </div>
 
-            <button className="save-btn" onClick={handleSave}>Save changes</button>
+            <button className="save-btn" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
           </>
         )}
       </div>

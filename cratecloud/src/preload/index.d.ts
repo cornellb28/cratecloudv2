@@ -20,6 +20,11 @@ type DbTrackRow = {
   format: string | null
   album: string | null
   year: string | null
+  remixer: string | null
+  grouping: string | null
+  composer: string | null
+  comment: string | null
+  label: string | null
   waveform: string | null
 }
 
@@ -45,6 +50,15 @@ declare global {
       dialog: {
         openFolder: () => Promise<string | null>
         openFiles: () => Promise<string[]>
+      }
+      crate: {
+        getAll: () => Promise<{ id: number; name: string; color: string; created_at: number }[]>
+        getAllTrackIds: () => Promise<{ crate_id: number; track_id: number }[]>
+        insert: (name: string, color: string) => Promise<number>
+        update: (id: number, name: string, color: string) => Promise<void>
+        delete: (id: number) => Promise<void>
+        addTracks: (crateId: number, trackIds: number[]) => Promise<void>
+        removeTracks: (crateId: number, trackIds: number[]) => Promise<void>
       }
       fs: {
         moveFile: (fromPath: string, toFolder: string) => Promise<string>

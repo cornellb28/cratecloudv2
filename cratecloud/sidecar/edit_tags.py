@@ -10,7 +10,7 @@ import sys
 import json
 import argparse
 
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TBPM, TKEY, TDRC, error as ID3Error
+from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TBPM, TKEY, TDRC, TPE4, TIT1, TCOM, COMM, TPUB, error as ID3Error
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
@@ -49,14 +49,24 @@ def edit_mp3(filepath, meta, write_serato):
         easy['genre'] = [meta['genre']]
     if meta.get('year') is not None:
         easy['date'] = [str(meta['year'])]
+    if meta.get('composer') is not None:
+        easy['composer'] = [meta['composer']]
+    if meta.get('grouping') is not None:
+        easy['grouping'] = [meta['grouping']]
     easy.save()
 
-    # Raw ID3 for BPM and key (not in EasyID3)
+    # Raw ID3 for BPM, key, and frames not available via EasyID3
     raw = ID3(filepath)
     if meta.get('bpm') is not None:
         raw['TBPM'] = TBPM(encoding=3, text=str(int(float(meta['bpm']))))
     if meta.get('key') is not None:
         raw['TKEY'] = TKEY(encoding=3, text=str(meta['key']))
+    if meta.get('remixer') is not None:
+        raw['TPE4'] = TPE4(encoding=3, text=str(meta['remixer']))
+    if meta.get('label') is not None:
+        raw['TPUB'] = TPUB(encoding=3, text=str(meta['label']))
+    if meta.get('comment') is not None:
+        raw['COMM::eng'] = COMM(encoding=3, lang='eng', desc='', text=str(meta['comment']))
     raw.save()
 
     # Serato autotags
@@ -85,6 +95,16 @@ def edit_flac(filepath, meta, write_serato):
         audio['bpm'] = [str(int(float(meta['bpm'])))]
     if meta.get('key') is not None:
         audio['key'] = [str(meta['key'])]
+    if meta.get('remixer') is not None:
+        audio['remixer'] = [meta['remixer']]
+    if meta.get('grouping') is not None:
+        audio['grouping'] = [meta['grouping']]
+    if meta.get('composer') is not None:
+        audio['composer'] = [meta['composer']]
+    if meta.get('comment') is not None:
+        audio['comment'] = [meta['comment']]
+    if meta.get('label') is not None:
+        audio['organization'] = [meta['label']]
     audio.save()
 
     if write_serato and HAS_SERATO and meta.get('bpm') is not None:
@@ -113,6 +133,12 @@ def edit_m4a(filepath, meta, _write_serato):
         t['\xa9day'] = [str(meta['year'])]
     if meta.get('bpm') is not None:
         t['tmpo'] = [int(float(meta['bpm']))]
+    if meta.get('composer') is not None:
+        t['\xa9wrt'] = [meta['composer']]
+    if meta.get('grouping') is not None:
+        t['\xa9grp'] = [meta['grouping']]
+    if meta.get('comment') is not None:
+        t['\xa9cmt'] = [meta['comment']]
     audio.save()
 
 
