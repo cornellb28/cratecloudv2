@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useLibraryStore } from './stores/useLibraryStore'
+import { useTagStore } from './stores/useTagStore'
 import { ContextMenuProvider } from './contexts/ContextMenuContext'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
@@ -14,13 +15,16 @@ import { BoardView } from './components/board/BoardView'
 import { LibraryView } from './components/library/LibraryView'
 import { SetlistView } from './components/setlist/SetlistView'
 import { Inspector } from './components/Inspector'
+import { PlayerBar } from './components/PlayerBar'
 
 function AppInner(): React.JSX.Element {
   const { activeTab, initFromDb } = useLibraryStore()
+  const { init: initTags } = useTagStore()
   const showInspector = activeTab !== 'AI Match'
 
   useEffect(() => {
     initFromDb()
+    initTags()
   }, [])
 
   return (
@@ -51,6 +55,8 @@ function AppInner(): React.JSX.Element {
 
         {showInspector && <Inspector />}
       </div>
+
+      <PlayerBar />
 
       {/* Global overlays */}
       <ContextMenu />

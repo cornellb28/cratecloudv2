@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useContextMenu } from '../contexts/ContextMenuContext'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import { usePlayerStore } from '../stores/usePlayerStore'
 
 const COLUMNS = ['Untagged', 'Tagged', 'Crate ready', 'Gig ready']
 const MENU_W = 200
@@ -11,6 +12,7 @@ export function ContextMenu(): React.JSX.Element | null {
     setActiveTrack, moveTrack, updateTrack, openDeleteDialog, openEditDialog,
     crates, activeCrateId, addTracksToCrate, removeTracksFromCrate,
   } = useLibraryStore()
+  const { playTrack } = usePlayerStore()
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -61,6 +63,11 @@ export function ContextMenu(): React.JSX.Element | null {
       className="ctx-menu"
       style={{ left: posX, top: posY }}
     >
+      {track.filepath && (
+        <div className="ctx-item ctx-play" onClick={act(() => playTrack(track))}>
+          ▶ Play
+        </div>
+      )}
       <div className="ctx-item" onClick={act(() => setActiveTrack(track, col))}>
         Open in Inspector
       </div>

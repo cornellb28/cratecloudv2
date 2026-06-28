@@ -38,6 +38,13 @@ export type CrateRow = {
   created_at: number
 }
 
+export type TagRow = {
+  id: number
+  field: string
+  value: string
+  color: string
+}
+
 let _db: Database.Database | null = null
 
 function db(): Database.Database {
@@ -81,6 +88,13 @@ function db(): Database.Database {
         name       TEXT    NOT NULL,
         color      TEXT    NOT NULL DEFAULT '#7f77dd',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
+      CREATE TABLE IF NOT EXISTS tags (
+        id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        field TEXT    NOT NULL,
+        value TEXT    NOT NULL,
+        color TEXT    NOT NULL DEFAULT '#7f77dd',
+        UNIQUE(field, value)
       );
       CREATE TABLE IF NOT EXISTS crate_tracks (
         crate_id   INTEGER NOT NULL REFERENCES crates(id) ON DELETE CASCADE,
@@ -146,10 +160,19 @@ export function insertTracks(rows: DbTrackInsert[]): number[] {
 export function updateTrackFields(id: number, fields: Record<string, unknown>): void {
   const keys = Object.keys(fields)
   if (!keys.length) return
+  // Sanitize: SQLite3 only accepts null/number/string/bigint/Buffer.
+  // undefined → null; arrays/objects (e.g. waveform: number[]) → JSON string.
+  const safe: Record<string, unknown> = {}
+  for (const k of keys) {
+    const v = fields[k]
+    if (v === undefined) safe[k] = null
+    else if (Array.isArray(v) || (typeof v === 'object' && v !== null)) safe[k] = JSON.stringify(v)
+    else safe[k] = v
+  }
   const setClauses = keys.map((k) => `${k} = @${k}`).join(', ')
   db()
     .prepare(`UPDATE tracks SET ${setClauses} WHERE id = @id`)
-    .run({ ...fields, id })
+    .run({ ...safe, id })
 }
 
 export function deleteTracks(ids: number[]): void {
@@ -196,6 +219,27 @@ export function addTracksToCrate(crateId: number, trackIds: number[]): void {
   if (!trackIds.length) return
   const stmt = db().prepare('INSERT OR IGNORE INTO crate_tracks (crate_id, track_id) VALUES (?, ?)')
   db().transaction(() => { for (const id of trackIds) stmt.run(crateId, id) })()
+}
+
+// ── Tags ──────────────────────────────────────────────────────────────────────
+
+export function getTags(): TagRow[] {
+  return db().prepare('SELECT * FROM tags ORDER BY field, value').all() as TagRow[]
+}
+
+export function insertTag(field: string, value: string, color: string): number {
+  const result = db()
+    .prepare('INSERT OR IGNORE INTO tags (field, value, color) VALUES (?, ?, ?)')
+    .run(field, value, color)
+  return result.changes > 0 ? Number(result.lastInsertRowid) : -1
+}
+
+export function deleteTag(id: number): void {
+  db().prepare('DELETE FROM tags WHERE id = ?').run(id)
+}
+
+export function updateTag(id: number, value: string, color: string): void {
+  db().prepare('UPDATE tags SET value = ?, color = ? WHERE id = ?').run(value, color, id)
 }
 
 export function removeTracksFromCrate(crateId: number, trackIds: number[]): void {

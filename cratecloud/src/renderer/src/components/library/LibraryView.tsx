@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import { useContextMenu } from '../../contexts/ContextMenuContext'
+import { usePlayerStore } from '../../stores/usePlayerStore'
 import { COLUMN_COLORS } from '../../types/track'
 import type { Track } from '../../types/track'
 
@@ -12,6 +13,7 @@ export function LibraryView(): React.JSX.Element {
     crates, activeCrateId, setActiveCrate,
   } = useLibraryStore()
   const { openMenu } = useContextMenu()
+  const { playTrack, currentTrack, isPlaying } = usePlayerStore()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const q = searchQuery.toLowerCase()
@@ -101,6 +103,7 @@ export function LibraryView(): React.JSX.Element {
                 tracks.map((track, i) => {
                   const isSelected = selected.has(track.id)
                   const isActive = activeTrack?.id === track.id
+                  const isCurrentlyPlaying = currentTrack?.id === track.id
                   return (
                     <tr
                       key={track.id}
@@ -108,10 +111,12 @@ export function LibraryView(): React.JSX.Element {
                         'lib-track-row',
                         isActive ? 'active' : '',
                         isSelected ? 'lib-selected' : '',
+                        isCurrentlyPlaying ? 'lib-playing' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
                       onClick={() => setActiveTrack(track, name)}
+                      onDoubleClick={() => track.filepath && playTrack(track)}
                       onContextMenu={(e) => handleContextMenu(e, track, name)}
                     >
                       <td
@@ -122,7 +127,16 @@ export function LibraryView(): React.JSX.Element {
                           {isSelected && <span>✓</span>}
                         </div>
                       </td>
-                      <td className="lib-td lib-td-num">{i + 1}</td>
+                      <td
+                        className="lib-td lib-td-num"
+                        onClick={(e) => { e.stopPropagation(); if (track.filepath) playTrack(track) }}
+                        title="Play"
+                      >
+                        {isCurrentlyPlaying
+                          ? <span className="lib-num-playing">{isPlaying ? '▶' : '⏸'}</span>
+                          : <><span className="lib-num-idx">{i + 1}</span><span className="lib-num-play">▶</span></>
+                        }
+                      </td>
                       <td className="lib-td lib-td-title">{track.title}</td>
                       <td className="lib-td lib-td-artist">{track.artist || <span className="lib-dim">—</span>}</td>
                       <td className="lib-td lib-td-mono">

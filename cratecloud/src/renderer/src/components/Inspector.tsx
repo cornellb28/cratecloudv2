@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Track } from '../types/track'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import { useTagStore, type TagField } from '../stores/useTagStore'
 
 const PLACEHOLDER_WAVE = [8, 14, 20, 28, 22, 35, 28, 20, 33, 26, 18, 30, 24, 16, 34, 28, 22, 36, 30, 18, 25, 32, 20, 14, 28, 22, 16, 30, 24, 18]
 const AI_MATCHES = [
@@ -24,6 +25,46 @@ function WaveformPreview({ waveform }: { waveform?: number[] }): React.JSX.Eleme
           style={{ height: `${Math.max(2, Math.round((h / max) * 34))}px` }}
         />
       ))}
+    </div>
+  )
+}
+
+function appendTag(current: string, value: string): string {
+  if (!current) return value
+  const parts = current.split('/').map((s) => s.trim()).filter(Boolean)
+  if (parts.includes(value)) return current
+  return [...parts, value].join('/')
+}
+
+function TagSuggestions({
+  field,
+  currentValue,
+  onSelect,
+}: {
+  field: TagField
+  currentValue: string
+  onSelect: (value: string) => void
+}): React.JSX.Element | null {
+  const { tagsForField } = useTagStore()
+  const fieldTags = tagsForField(field)
+  if (!fieldTags.length) return null
+  return (
+    <div className="insp-tag-suggestions">
+      {fieldTags.map((tag) => {
+        const already = currentValue.split('/').map((s) => s.trim()).includes(tag.value)
+        return (
+          <button
+            key={tag.id}
+            className={`insp-tag-chip${already ? ' insp-tag-chip-active' : ''}`}
+            style={{ borderColor: tag.color, color: tag.color }}
+            onClick={() => onSelect(appendTag(currentValue, tag.value))}
+            title={already ? `Already applied` : `Add "${tag.value}"`}
+            type="button"
+          >
+            {tag.value}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -155,6 +196,7 @@ export function Inspector(): React.JSX.Element {
                 placeholder="—"
                 onChange={(e) => handleChange('genre', e.target.value)}
               />
+              <TagSuggestions field="genre" currentValue={form.genre ?? ''} onSelect={(v) => handleChange('genre', v)} />
             </div>
 
             <div>
@@ -207,6 +249,7 @@ export function Inspector(): React.JSX.Element {
                 placeholder="—"
                 onChange={(e) => handleChange('remixer', e.target.value)}
               />
+              <TagSuggestions field="remixer" currentValue={form.remixer ?? ''} onSelect={(v) => handleChange('remixer', v)} />
             </div>
 
             <div>
@@ -217,6 +260,7 @@ export function Inspector(): React.JSX.Element {
                 placeholder="—"
                 onChange={(e) => handleChange('grouping', e.target.value)}
               />
+              <TagSuggestions field="grouping" currentValue={form.grouping ?? ''} onSelect={(v) => handleChange('grouping', v)} />
             </div>
 
             <div>
@@ -227,6 +271,7 @@ export function Inspector(): React.JSX.Element {
                 placeholder="—"
                 onChange={(e) => handleChange('composer', e.target.value)}
               />
+              <TagSuggestions field="composer" currentValue={form.composer ?? ''} onSelect={(v) => handleChange('composer', v)} />
             </div>
 
             <div>
@@ -237,6 +282,7 @@ export function Inspector(): React.JSX.Element {
                 placeholder="—"
                 onChange={(e) => handleChange('label', e.target.value)}
               />
+              <TagSuggestions field="label" currentValue={form.label ?? ''} onSelect={(v) => handleChange('label', v)} />
             </div>
 
             <div>
@@ -247,6 +293,7 @@ export function Inspector(): React.JSX.Element {
                 placeholder="—"
                 onChange={(e) => handleChange('comment', e.target.value)}
               />
+              <TagSuggestions field="comment" currentValue={form.comment ?? ''} onSelect={(v) => handleChange('comment', v)} />
             </div>
 
             <div>

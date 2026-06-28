@@ -51,6 +51,15 @@ declare global {
         openFolder: () => Promise<string | null>
         openFiles: () => Promise<string[]>
       }
+      audio: {
+        serverPort: () => Promise<number>
+      }
+      tags: {
+        getAll: () => Promise<{ id: number; field: string; value: string; color: string }[]>
+        insert: (field: string, value: string, color: string) => Promise<number>
+        delete: (id: number) => Promise<void>
+        update: (id: number, value: string, color: string) => Promise<void>
+      }
       crate: {
         getAll: () => Promise<{ id: number; name: string; color: string; created_at: number }[]>
         getAllTrackIds: () => Promise<{ crate_id: number; track_id: number }[]>

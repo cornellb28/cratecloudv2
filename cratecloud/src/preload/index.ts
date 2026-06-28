@@ -50,6 +50,11 @@ const api = {
       ipcRenderer.invoke('fs:classifyDropped', paths),
   },
 
+  // ── Audio server ────────────────────────────────────────────────────────────
+  audio: {
+    serverPort: (): Promise<number> => ipcRenderer.invoke('audio:serverPort'),
+  },
+
   // ── Crates ──────────────────────────────────────────────────────────────────
   crate: {
     getAll: (): Promise<{ id: number; name: string; color: string; created_at: number }[]> =>
@@ -66,6 +71,17 @@ const api = {
       ipcRenderer.invoke('crate:addTracks', crateId, trackIds),
     removeTracks: (crateId: number, trackIds: number[]): Promise<void> =>
       ipcRenderer.invoke('crate:removeTracks', crateId, trackIds),
+  },
+
+  // ── Tags ────────────────────────────────────────────────────────────────────
+  tags: {
+    getAll: (): Promise<{ id: number; field: string; value: string; color: string }[]> =>
+      ipcRenderer.invoke('tag:getAll'),
+    insert: (field: string, value: string, color: string): Promise<number> =>
+      ipcRenderer.invoke('tag:insert', field, value, color),
+    delete: (id: number): Promise<void> => ipcRenderer.invoke('tag:delete', id),
+    update: (id: number, value: string, color: string): Promise<void> =>
+      ipcRenderer.invoke('tag:update', id, value, color),
   },
 
   // ── Window controls ─────────────────────────────────────────────────────

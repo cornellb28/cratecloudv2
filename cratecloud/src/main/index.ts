@@ -1,6 +1,9 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, extname, basename } from 'path'
 import { readdir, rename, copyFile, unlink, stat } from 'fs/promises'
+import { createReadStream } from 'fs'
+import * as http from 'http'
+import type { AddressInfo } from 'net'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
@@ -8,9 +11,61 @@ import {
   getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
   getAllCrateTrackIds, addTracksToCrate, removeTracksFromCrate,
+  getTags, insertTag, deleteTag, updateTag,
 } from './db'
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
+
+const AUDIO_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.flac': 'audio/flac',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.aiff': 'audio/aiff',
+  '.aif': 'audio/aiff',
+}
+
+// Local HTTP server that serves audio files with range-request support.
+// Chromium requires range requests (HTTP 206) to seek in audio/video elements.
+let _audioPort = 0
+const _audioServer = http.createServer(async (req, res) => {
+  const filePath = decodeURIComponent(req.url!)
+  const mime = AUDIO_MIME[extname(filePath).toLowerCase()] ?? 'audio/mpeg'
+
+  let fileSize: number
+  try {
+    fileSize = (await stat(filePath)).size
+  } catch {
+    res.writeHead(404); res.end(); return
+  }
+
+  const range = req.headers['range']
+  if (range) {
+    const [s, e] = range.replace('bytes=', '').split('-')
+    const start = parseInt(s, 10)
+    const end = e ? parseInt(e, 10) : fileSize - 1
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type': mime,
+    })
+    createReadStream(filePath, { start, end }).pipe(res)
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': mime,
+      'Accept-Ranges': 'bytes',
+    })
+    createReadStream(filePath).pipe(res)
+  }
+})
+_audioServer.on('error', (err) => console.error('[audio-server] error:', err))
+_audioServer.listen(0, '127.0.0.1', () => {
+  _audioPort = (_audioServer.address() as AddressInfo).port
+  console.log('[audio-server] listening on port', _audioPort)
+})
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -49,6 +104,12 @@ app.whenReady().then(() => {
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  // ── Audio file server ─────────────────────────────────────────────────────
+  ipcMain.handle('audio:serverPort', () => {
+    console.log('[audio-server] port requested, returning', _audioPort)
+    return _audioPort
   })
 
   // ── Audio analysis ────────────────────────────────────────────────────────
@@ -162,6 +223,16 @@ app.whenReady().then(() => {
   ipcMain.handle('crate:delete', (_event, id: number) => deleteCrateRow(id))
   ipcMain.handle('crate:addTracks', (_event, crateId: number, trackIds: number[]) => addTracksToCrate(crateId, trackIds))
   ipcMain.handle('crate:removeTracks', (_event, crateId: number, trackIds: number[]) => removeTracksFromCrate(crateId, trackIds))
+
+  // ── Tags ─────────────────────────────────────────────────────────────────
+  ipcMain.handle('tag:getAll', () => getTags())
+  ipcMain.handle('tag:insert', (_event, field: string, value: string, color: string) =>
+    insertTag(field, value, color)
+  )
+  ipcMain.handle('tag:delete', (_event, id: number) => deleteTag(id))
+  ipcMain.handle('tag:update', (_event, id: number, value: string, color: string) =>
+    updateTag(id, value, color)
+  )
 
   // ── Window controls ───────────────────────────────────────────────────────
   ipcMain.on('window:close', (event) => {

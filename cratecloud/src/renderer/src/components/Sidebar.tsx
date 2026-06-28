@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import type { Crate } from '../types/track'
+import { TagCloud } from './TagCloud'
 
 type CrateMenuState = { x: number; y: number; crate: Crate } | null
 
@@ -77,6 +78,9 @@ export function Sidebar(): React.JSX.Element {
           <span className="sb-count">{c.trackIds.size}</span>
         </div>
       ))}
+
+      {/* Tag cloud */}
+      <TagCloud />
 
       {/* Inline crate context menu */}
       {crateMenu && (
