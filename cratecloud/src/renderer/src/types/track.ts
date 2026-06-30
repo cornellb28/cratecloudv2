@@ -22,6 +22,7 @@ export type Track = {
   composer?: string
   comment?: string
   label?: string
+  artwork_path?: string
 }
 
 export type Crate = {

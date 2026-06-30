@@ -27,6 +27,7 @@ export type DbTrackRow = {
   comment: string | null
   label: string | null
   waveform: string | null
+  artwork_path: string | null
 }
 
 export type DbTrackInsert = Omit<DbTrackRow, 'id'>
@@ -79,7 +80,8 @@ function db(): Database.Database {
         composer     TEXT,
         comment      TEXT,
         label        TEXT,
-        waveform     TEXT
+        waveform     TEXT,
+        artwork_path TEXT
       );
       CREATE TABLE IF NOT EXISTS _schema_migrations (name TEXT PRIMARY KEY);
       INSERT OR IGNORE INTO _schema_migrations VALUES ('add_extended_fields_v2');
@@ -102,12 +104,23 @@ function db(): Database.Database {
         added_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
         PRIMARY KEY (crate_id, track_id)
       );
+      CREATE TABLE IF NOT EXISTS setlists (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
+      CREATE TABLE IF NOT EXISTS setlist_tracks (
+        setlist_id INTEGER NOT NULL REFERENCES setlists(id) ON DELETE CASCADE,
+        track_id   INTEGER NOT NULL REFERENCES tracks(id)   ON DELETE CASCADE,
+        position   INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(setlist_id, track_id)
+      );
     `)
 
     // Stage 2: ALTER TABLE for existing DBs missing columns
     const existing = _db.prepare('PRAGMA table_info(tracks)').all() as { name: string }[]
     const colNames = new Set(existing.map((c) => c.name))
-    for (const col of ['remixer', 'grouping', 'composer', 'comment', 'label']) {
+    for (const col of ['remixer', 'grouping', 'composer', 'comment', 'label', 'artwork_path']) {
       if (!colNames.has(col)) {
         _db.exec(`ALTER TABLE tracks ADD COLUMN ${col} TEXT`)
       }
@@ -145,11 +158,11 @@ export function insertTracks(rows: DbTrackInsert[]): number[] {
     INSERT OR IGNORE INTO tracks
       (title, artist, bpm, key_val, genre, energy, column_name, folder, filepath,
        camelot, openkey, duration_str, duration_sec, file_size_mb, format, album, year,
-       remixer, grouping, composer, comment, label, waveform)
+       remixer, grouping, composer, comment, label, waveform, artwork_path)
     VALUES
       (@title, @artist, @bpm, @key_val, @genre, @energy, @column_name, @folder, @filepath,
        @camelot, @openkey, @duration_str, @duration_sec, @file_size_mb, @format, @album, @year,
-       @remixer, @grouping, @composer, @comment, @label, @waveform)
+       @remixer, @grouping, @composer, @comment, @label, @waveform, @artwork_path)
   `)
   const insertAll = db().transaction((rows: DbTrackInsert[]) =>
     rows.map((row) => Number(stmt.run(row).lastInsertRowid))
@@ -249,4 +262,71 @@ export function removeTracksFromCrate(crateId: number, trackIds: number[]): void
       `DELETE FROM crate_tracks WHERE crate_id = ? AND track_id IN (SELECT value FROM json_each(?))`
     )
     .run(crateId, JSON.stringify(trackIds))
+}
+
+// ── Setlists ──────────────────────────────────────────────────────────────────
+
+export type SetlistRow = { id: number; name: string; created_at: number }
+
+export function getSetlists(): SetlistRow[] {
+  return db().prepare('SELECT * FROM setlists ORDER BY created_at').all() as SetlistRow[]
+}
+
+export function createSetlist(name: string): number {
+  return Number(db().prepare('INSERT INTO setlists (name) VALUES (?)').run(name).lastInsertRowid)
+}
+
+export function renameSetlist(id: number, name: string): void {
+  db().prepare('UPDATE setlists SET name = ? WHERE id = ?').run(name, id)
+}
+
+export function deleteSetlist(id: number): void {
+  db().prepare('DELETE FROM setlists WHERE id = ?').run(id)
+}
+
+export function getSetlistTrackIds(setlistId: number): number[] {
+  return (
+    db()
+      .prepare('SELECT track_id FROM setlist_tracks WHERE setlist_id = ? ORDER BY position')
+      .all(setlistId) as { track_id: number }[]
+  ).map((r) => r.track_id)
+}
+
+export function addSetlistTrack(setlistId: number, trackId: number): void {
+  const maxPos = (
+    db()
+      .prepare('SELECT COALESCE(MAX(position),0) as m FROM setlist_tracks WHERE setlist_id = ?')
+      .get(setlistId) as { m: number }
+  ).m
+  db()
+    .prepare('INSERT OR IGNORE INTO setlist_tracks (setlist_id, track_id, position) VALUES (?,?,?)')
+    .run(setlistId, trackId, maxPos + 1)
+}
+
+export function removeSetlistTrack(setlistId: number, trackId: number): void {
+  db()
+    .prepare('DELETE FROM setlist_tracks WHERE setlist_id = ? AND track_id = ?')
+    .run(setlistId, trackId)
+}
+
+export function reorderSetlistTracks(setlistId: number, trackIds: number[]): void {
+  const stmt = db().prepare(
+    'UPDATE setlist_tracks SET position = ? WHERE setlist_id = ? AND track_id = ?'
+  )
+  db().transaction(() => {
+    trackIds.forEach((id, i) => stmt.run(i, setlistId, id))
+  })()
+}
+
+export function getSetlistFilepaths(setlistId: number): string[] {
+  return (
+    db()
+      .prepare(
+        `SELECT t.filepath FROM setlist_tracks st
+         JOIN tracks t ON t.id = st.track_id
+         WHERE st.setlist_id = ? AND t.filepath IS NOT NULL
+         ORDER BY st.position`
+      )
+      .all(setlistId) as { filepath: string }[]
+  ).map((r) => r.filepath)
 }

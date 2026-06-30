@@ -1,6 +1,8 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, extname, basename } from 'path'
-import { readdir, rename, copyFile, unlink, stat } from 'fs/promises'
+import { homedir } from 'os'
+import { createHash } from 'crypto'
+import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile } from 'fs/promises'
 import { createReadStream } from 'fs'
 import * as http from 'http'
 import type { AddressInfo } from 'net'
@@ -12,7 +14,63 @@ import {
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
   getAllCrateTrackIds, addTracksToCrate, removeTracksFromCrate,
   getTags, insertTag, deleteTag, updateTag,
+  getSetlists, createSetlist, renameSetlist, deleteSetlist,
+  getSetlistTrackIds, addSetlistTrack, removeSetlistTrack,
+  reorderSetlistTracks, getSetlistFilepaths,
 } from './db'
+
+// ── Serato crate helpers ──────────────────────────────────────────────────────
+
+async function findSeratoCratesDir(): Promise<string | null> {
+  // Search roots: known volume paths + standard home Music
+  const searchRoots = [
+    '/Volumes/SAASAPPS',
+    '/nellz/music',
+    join(homedir(), 'Music'),
+    join(homedir(), 'music'),
+    homedir(),
+  ]
+  const seratoFolders = ['_Serato_', 'Serato DJ Pro', 'Serato DJ', 'Serato DJ Lite']
+
+  for (const root of searchRoots) {
+    for (const folder of seratoFolders) {
+      const seratoDir = join(root, folder)
+      const cratesDir = join(seratoDir, 'Crates')
+      try {
+        await stat(seratoDir) // confirm Serato root exists
+        await mkdir(cratesDir, { recursive: true }) // create Crates if missing
+        return cratesDir
+      } catch { /* not found, try next */ }
+    }
+  }
+  return null
+}
+
+function buildSeratoCrate(filepaths: string[]): Buffer {
+  const toUtf16BE = (s: string): Buffer => {
+    const le = Buffer.from(s, 'utf16le')
+    const be = Buffer.allocUnsafe(le.length)
+    for (let i = 0; i < le.length; i += 2) {
+      be[i] = le[i + 1]
+      be[i + 1] = le[i]
+    }
+    return be
+  }
+  const field = (tag: string, data: Buffer): Buffer => {
+    const len = Buffer.allocUnsafe(4)
+    len.writeUInt32BE(data.length, 0)
+    return Buffer.concat([Buffer.from(tag, 'ascii'), len, data])
+  }
+  const chunks: Buffer[] = [field('vrsn', toUtf16BE('1.0/Serato ScratchLive Crate'))]
+  for (const p of filepaths) {
+    chunks.push(field('otrk', field('ptrk', toUtf16BE(p))))
+  }
+  return Buffer.concat(chunks)
+}
+
+function sanitizeCrateName(name: string): string {
+  return name.replace(/[/\\:*?"<>|%%]/g, '_')
+}
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
 
@@ -24,6 +82,19 @@ const AUDIO_MIME: Record<string, string> = {
   '.m4a': 'audio/mp4',
   '.aiff': 'audio/aiff',
   '.aif': 'audio/aiff',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+}
+
+async function saveArtwork(filepath: string, b64: string): Promise<string> {
+  const artDir = join(app.getPath('userData'), 'artwork')
+  await mkdir(artDir, { recursive: true })
+  const hash = createHash('md5').update(filepath).digest('hex')
+  const artPath = join(artDir, `${hash}.jpg`)
+  await writeFile(artPath, Buffer.from(b64, 'base64'))
+  return artPath
 }
 
 // Local HTTP server that serves audio files with range-request support.
@@ -118,7 +189,12 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('analyze-file', async (_event, filepath: string, writeBack = false) => {
-    return analyzeFile(filepath, { writeBack })
+    const result = await analyzeFile(filepath, { writeBack })
+    if (result.success && result.artwork_b64) {
+      try { result.artwork_path = await saveArtwork(filepath, result.artwork_b64) } catch { /* non-fatal */ }
+      delete result.artwork_b64
+    }
+    return result
   })
 
   ipcMain.handle('analyze-folder', async (event, folderPath: string, writeBack = false) => {
@@ -127,19 +203,37 @@ app.whenReady().then(() => {
       .filter((f) => AUDIO_EXTENSIONS.has(extname(f).toLowerCase()))
       .map((f) => join(folderPath, f))
 
-    const results: AnalysisResult[] = []
-    for (let i = 0; i < files.length; i++) {
-      event.sender.send('analyze-progress', {
-        current: i + 1,
-        total: files.length,
-        file: basename(files[i]),
-      })
-      try {
-        results.push(await analyzeFile(files[i], { writeBack }))
-      } catch (err) {
-        results.push({ success: false, filepath: files[i], error: String(err) })
+    const total = files.length
+    const results: AnalysisResult[] = new Array(total)
+    let nextIdx = 0
+    let completed = 0
+    const CONCURRENCY = 4
+
+    const workers = Array.from({ length: Math.min(CONCURRENCY, total) }, async () => {
+      while (true) {
+        const i = nextIdx++
+        if (i >= total) break
+        const filepath = files[i]
+        try {
+          const r = await analyzeFile(filepath, { writeBack })
+          if (r.success && r.artwork_b64) {
+            try { r.artwork_path = await saveArtwork(filepath, r.artwork_b64) } catch { /* non-fatal */ }
+            delete r.artwork_b64
+          }
+          results[i] = r
+        } catch (err) {
+          results[i] = { success: false, filepath, error: String(err) }
+        }
+        completed++
+        event.sender.send('analyze-progress', {
+          current: completed,
+          total,
+          file: basename(filepath),
+        })
       }
-    }
+    })
+
+    await Promise.all(workers)
     return results
   })
 
@@ -151,6 +245,18 @@ app.whenReady().then(() => {
       title: 'Select music folder',
     })
     return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('artwork:pick', async (event, audioFilepath: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openFile'],
+      title: 'Choose album artwork',
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const imgBuffer = await readFile(result.filePaths[0])
+    return saveArtwork(audioFilepath, imgBuffer.toString('base64'))
   })
 
   ipcMain.handle('dialog:openFiles', async (event) => {
@@ -233,6 +339,42 @@ app.whenReady().then(() => {
   ipcMain.handle('tag:update', (_event, id: number, value: string, color: string) =>
     updateTag(id, value, color)
   )
+
+  // ── Setlists ──────────────────────────────────────────────────────────────
+  ipcMain.handle('setlist:getAll', () => getSetlists())
+  ipcMain.handle('setlist:getTrackIds', (_e, id: number) => getSetlistTrackIds(id))
+  ipcMain.handle('setlist:create', (_e, name: string) => createSetlist(name))
+  ipcMain.handle('setlist:rename', (_e, id: number, name: string) => renameSetlist(id, name))
+  ipcMain.handle('setlist:delete', (_e, id: number) => deleteSetlist(id))
+  ipcMain.handle('setlist:addTrack', (_e, setlistId: number, trackId: number) =>
+    addSetlistTrack(setlistId, trackId)
+  )
+  ipcMain.handle('setlist:removeTrack', (_e, setlistId: number, trackId: number) =>
+    removeSetlistTrack(setlistId, trackId)
+  )
+  ipcMain.handle('setlist:reorder', (_e, setlistId: number, trackIds: number[]) =>
+    reorderSetlistTracks(setlistId, trackIds)
+  )
+  ipcMain.handle('setlist:exportSerato', async (_e, setlistId: number, setlistName: string) => {
+    try {
+      const cratesDir = await findSeratoCratesDir()
+      if (!cratesDir) {
+        return { success: false, seratoDetected: false, error: 'Serato not found on this machine.' }
+      }
+      const filepaths = getSetlistFilepaths(setlistId)
+      if (!filepaths.length) {
+        return { success: false, seratoDetected: true, error: 'No tracks with file paths to export.' }
+      }
+      const crate = buildSeratoCrate(filepaths)
+      const safe = sanitizeCrateName(setlistName)
+      const filename = `CrateCloud%%${safe}.crate`
+      const outPath = join(cratesDir, filename)
+      await writeFile(outPath, crate)
+      return { success: true, seratoDetected: true, path: outPath }
+    } catch (err) {
+      return { success: false, seratoDetected: true, error: String(err) }
+    }
+  })
 
   // ── Window controls ───────────────────────────────────────────────────────
   ipcMain.on('window:close', (event) => {

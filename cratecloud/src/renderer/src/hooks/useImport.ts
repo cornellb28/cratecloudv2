@@ -51,11 +51,24 @@ export function useImport() {
         const newAudioFiles = audioFiles.filter((p) => !knownPaths.has(p))
         skipped += audioFiles.length - newAudioFiles.length
 
-        for (let i = 0; i < newAudioFiles.length; i++) {
-          const name = newAudioFiles[i].split('/').pop() ?? ''
-          setImportStatus({ current: i + 1, total: newAudioFiles.length, label: name })
-          const result = await window.api.analyzeFile(newAudioFiles[i])
-          await addTracks([result])
+        if (newAudioFiles.length > 0) {
+          const total = newAudioFiles.length
+          const pending = [...newAudioFiles]
+          let completed = 0
+          const CONCURRENCY = 4
+
+          await Promise.all(
+            Array.from({ length: Math.min(CONCURRENCY, total) }, async () => {
+              while (pending.length) {
+                const filepath = pending.shift()!
+                const name = filepath.split('/').pop() ?? ''
+                setImportStatus({ current: completed + 1, total, label: name })
+                const result = await window.api.analyzeFile(filepath)
+                completed++
+                await addTracks([result])
+              }
+            })
+          )
         }
 
         if (skipped > 0) {

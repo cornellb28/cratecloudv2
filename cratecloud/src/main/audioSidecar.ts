@@ -33,6 +33,8 @@ export type AnalysisResult = {
   wrote_tags?: boolean
   elapsed_sec?: number
   error?: string
+  artwork_b64?: string | null
+  artwork_path?: string | null
 }
 
 export type ProgressEvent = {

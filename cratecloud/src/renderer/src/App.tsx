@@ -14,17 +14,16 @@ import { DropOverlay } from './components/DropOverlay'
 import { BoardView } from './components/board/BoardView'
 import { LibraryView } from './components/library/LibraryView'
 import { SetlistView } from './components/setlist/SetlistView'
-import { Inspector } from './components/Inspector'
 import { PlayerBar } from './components/PlayerBar'
 
 function AppInner(): React.JSX.Element {
-  const { activeTab, initFromDb } = useLibraryStore()
+  const { activeTab, activeView, initFromDb, setAudioPort } = useLibraryStore()
   const { init: initTags } = useTagStore()
-  const showInspector = activeTab !== 'AI Match'
 
   useEffect(() => {
     initFromDb()
     initTags()
+    window.api.audio.serverPort().then(setAudioPort)
   }, [])
 
   return (
@@ -41,8 +40,9 @@ function AppInner(): React.JSX.Element {
             </>
           )}
 
-          {activeTab === 'Library' && <LibraryView />}
-          {activeTab === 'Board' && <BoardView />}
+          {activeTab === 'Library' && activeView === 'List' && <LibraryView />}
+          {activeTab === 'Library' && activeView === 'Board' && <BoardView />}
+          {activeTab === 'Library' && activeView === 'Grid' && <LibraryView gridMode />}
           {activeTab === 'Setlist' && <SetlistView />}
           {activeTab === 'AI Match' && (
             <div className="view-placeholder">
@@ -52,8 +52,6 @@ function AppInner(): React.JSX.Element {
             </div>
           )}
         </div>
-
-        {showInspector && <Inspector />}
       </div>
 
       <PlayerBar />

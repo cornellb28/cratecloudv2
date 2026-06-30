@@ -84,6 +84,37 @@ const api = {
       ipcRenderer.invoke('tag:update', id, value, color),
   },
 
+  // ── Setlists ────────────────────────────────────────────────────────────────
+  setlist: {
+    getAll: (): Promise<{ id: number; name: string; created_at: number }[]> =>
+      ipcRenderer.invoke('setlist:getAll'),
+    getTrackIds: (id: number): Promise<number[]> =>
+      ipcRenderer.invoke('setlist:getTrackIds', id),
+    create: (name: string): Promise<number> =>
+      ipcRenderer.invoke('setlist:create', name),
+    rename: (id: number, name: string): Promise<void> =>
+      ipcRenderer.invoke('setlist:rename', id, name),
+    delete: (id: number): Promise<void> =>
+      ipcRenderer.invoke('setlist:delete', id),
+    addTrack: (setlistId: number, trackId: number): Promise<void> =>
+      ipcRenderer.invoke('setlist:addTrack', setlistId, trackId),
+    removeTrack: (setlistId: number, trackId: number): Promise<void> =>
+      ipcRenderer.invoke('setlist:removeTrack', setlistId, trackId),
+    reorder: (setlistId: number, trackIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('setlist:reorder', setlistId, trackIds),
+    exportSerato: (
+      setlistId: number,
+      name: string
+    ): Promise<{ success: boolean; seratoDetected: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke('setlist:exportSerato', setlistId, name),
+  },
+
+  // ── Artwork ─────────────────────────────────────────────────────────────────
+  artwork: {
+    pick: (audioFilepath: string): Promise<string | null> =>
+      ipcRenderer.invoke('artwork:pick', audioFilepath),
+  },
+
   // ── Window controls ─────────────────────────────────────────────────────
   window: {
     close: () => ipcRenderer.send('window:close'),

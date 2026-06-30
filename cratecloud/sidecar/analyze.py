@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import time
+import base64
 import argparse
 import numpy as np
 import librosa
@@ -24,6 +25,7 @@ KEY_TO_CAMELOT = {
     'G# minor': '1A', 'A minor':  '8A',  'A# minor': '3A', 'B minor':  '10A',
 }
 
+
 KEY_TO_OPENKEY = {
     'C major': '1d',  'C# major': '8d',  'D major':  '3d', 'D# major': '10d',
     'E major': '5d',  'F major':  '12d', 'F# major': '7d', 'G major':  '2d',
@@ -34,6 +36,9 @@ KEY_TO_OPENKEY = {
 }
 
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+# Build reverse map now that KEY_TO_CAMELOT is defined
+CAMELOT_REVERSE = {v: k for k, v in KEY_TO_CAMELOT.items()}
 
 # Krumhansl-Kessler key profiles
 MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
@@ -152,6 +157,55 @@ def analyze_audio(filepath: str) -> dict:
     }
 
 
+def extract_artwork(filepath: str) -> str | None:
+    """Return embedded album art as a base64 string, or None if unavailable."""
+    ext = os.path.splitext(filepath)[1].lower()
+    try:
+        if ext in ('.mp3', '.wav', '.aiff', '.aif'):
+            audio = ID3(filepath)
+            for key in audio.keys():
+                if key.startswith('APIC'):
+                    return base64.b64encode(audio[key].data).decode()
+        elif ext == '.flac':
+            audio = FLAC(filepath)
+            if audio.pictures:
+                return base64.b64encode(audio.pictures[0].data).decode()
+        elif ext in ('.m4a', '.mp4'):
+            audio = MP4(filepath)
+            if audio.tags and 'covr' in audio.tags:
+                return base64.b64encode(bytes(audio.tags['covr'][0])).decode()
+    except Exception:
+        pass
+    return None
+
+
+def fast_analyze_audio(filepath: str) -> dict:
+    """Load at 8 kHz for waveform/energy/duration only — skips BPM and key detection."""
+    y, sr = librosa.load(filepath, sr=8000, mono=True)
+    duration_sec = float(len(y) / sr)
+    minutes = int(duration_sec // 60)
+    seconds = int(duration_sec % 60)
+    duration_str = f'{minutes}:{seconds:02d}'
+
+    rms = librosa.feature.rms(y=y)
+    energy = round(float(np.mean(rms)), 4)
+
+    n_points = 1000
+    chunk_size = max(1, len(y) // n_points)
+    waveform = [
+        round(float(np.max(np.abs(y[i * chunk_size:(i + 1) * chunk_size]))), 4)
+        for i in range(n_points)
+        if len(y[i * chunk_size:(i + 1) * chunk_size]) > 0
+    ]
+
+    return {
+        'duration_sec': round(duration_sec, 2),
+        'duration_str': duration_str,
+        'energy':       energy,
+        'waveform':     waveform,
+    }
+
+
 def write_tags(filepath: str, bpm: float, camelot: str) -> bool:
     ext = os.path.splitext(filepath)[1].lower()
     try:
@@ -192,8 +246,38 @@ def analyze_file(filepath: str, write_back: bool = False) -> dict:
     file_size_mb = round(os.path.getsize(filepath) / (1024 * 1024), 2)
     existing_tags = read_existing_tags(filepath)
 
+    # Fast path: if the file already has BPM and a Camelot key tag, skip the
+    # expensive beat_track + chroma_cqt and only load audio for waveform/energy.
+    bpm_tag_str = (existing_tags.get('bpm_tag') or '').strip()
+    key_tag_str = (existing_tags.get('key_tag') or '').strip().upper()
+    use_fast_path = False
+    fast_bpm = None
+    fast_camelot = None
+    fast_key = None
+    fast_openkey = None
+
+    if bpm_tag_str and key_tag_str in CAMELOT_REVERSE:
+        try:
+            fast_bpm = round(float(bpm_tag_str), 1)
+            fast_camelot = key_tag_str
+            fast_key = CAMELOT_REVERSE[key_tag_str]
+            fast_openkey = KEY_TO_OPENKEY.get(fast_key, '')
+            use_fast_path = True
+        except ValueError:
+            pass
+
     try:
-        analysis = analyze_audio(filepath)
+        if use_fast_path:
+            partial = fast_analyze_audio(filepath)
+            analysis = {
+                'bpm':          fast_bpm,
+                'key':          fast_key,
+                'camelot':      fast_camelot,
+                'openkey':      fast_openkey,
+                **partial,
+            }
+        else:
+            analysis = analyze_audio(filepath)
     except Exception as e:
         return {
             'success':  False,
@@ -203,7 +287,7 @@ def analyze_file(filepath: str, write_back: bool = False) -> dict:
         }
 
     wrote_tags = False
-    if write_back:
+    if write_back and not use_fast_path:
         wrote_tags = write_tags(filepath, analysis['bpm'], analysis['camelot'])
 
     elapsed = round(time.time() - start_time, 2)
@@ -233,10 +317,11 @@ def analyze_file(filepath: str, write_back: bool = False) -> dict:
         'duration_str': analysis['duration_str'],
         'energy':       analysis['energy'],
         'waveform':     analysis['waveform'],
-        'bpm_source':   'tag' if existing_tags['bpm_tag'] else 'analyzed',
-        'key_source':   'tag' if existing_tags['key_tag'] else 'analyzed',
+        'bpm_source':   'tag' if use_fast_path else 'analyzed',
+        'key_source':   'tag' if use_fast_path else 'analyzed',
         'wrote_tags':   wrote_tags,
         'elapsed_sec':  elapsed,
+        'artwork_b64':  extract_artwork(filepath),
     }
 
 

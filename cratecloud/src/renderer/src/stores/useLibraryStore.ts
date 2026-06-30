@@ -12,12 +12,14 @@ type DbTrackRow = {
   remixer: string | null; grouping: string | null; composer: string | null
   comment: string | null; label: string | null
   waveform: string | null
+  artwork_path: string | null
 }
 
 export type ImportedTrackData = {
   success: boolean
   filepath: string
   filename?: string
+  artwork_path?: string | null
   title?: string | null
   artist?: string | null
   bpm?: number
@@ -73,6 +75,7 @@ function rowToTrack(row: DbTrackRow): Track {
     composer: row.composer ?? undefined,
     comment: row.comment ?? undefined,
     label: row.label ?? undefined,
+    artwork_path: row.artwork_path ?? undefined,
   }
 }
 
@@ -84,7 +87,10 @@ type LibraryState = {
   activeTrack: Track | null
   activeTrackCol: string | null
   activeTab: string
+  activeView: string
   searchQuery: string
+  activeFilter: string
+  audioPort: number
   deleteDialog: { trackIds: number[] } | null
   deletePreference: DeletePreference
   importStatus: { current: number; total: number; label: string } | null
@@ -96,7 +102,10 @@ type LibraryState = {
 
   initFromDb: () => Promise<void>
   setActiveTab: (tab: string) => void
+  setActiveView: (v: string) => void
   setSearchQuery: (q: string) => void
+  setActiveFilter: (f: string) => void
+  setAudioPort: (port: number) => void
   toggleSelect: (id: number) => void
   clearSelection: () => void
   moveTrack: (trackId: number, fromCol: string, toCol: string) => void
@@ -133,7 +142,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activeTrack: null,
   activeTrackCol: null,
   activeTab: 'Library',
+  activeView: 'Board',
   searchQuery: '',
+  activeFilter: 'All',
+  audioPort: 0,
   deleteDialog: null,
   deletePreference: 'ask',
   importStatus: null,
@@ -177,7 +189,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveView: (v) => set({ activeView: v }),
   setSearchQuery: (q) => set({ searchQuery: q }),
+  setActiveFilter: (f) => set({ activeFilter: f }),
+  setAudioPort: (port) => set({ audioPort: port }),
 
   toggleSelect: (id) => {
     const selected = new Set(get().selected)
@@ -273,6 +288,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         comment: r.comment ?? '',
         label: r.label ?? '',
         waveform: r.waveform ? JSON.stringify(r.waveform) : null,
+        artwork_path: r.artwork_path ?? null,
       }
     })
 
@@ -312,6 +328,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         composer: row.composer ?? undefined,
         comment: row.comment ?? undefined,
         label: row.label ?? undefined,
+        artwork_path: row.artwork_path ?? undefined,
       }
       if (row.column_name === 'Tagged') tagged.push(track)
       else untagged.push(track)

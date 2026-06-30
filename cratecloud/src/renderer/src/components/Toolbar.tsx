@@ -1,13 +1,15 @@
-import { useState } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
 
 const FILTERS = ['All', 'Untagged', '8A–8B', '128–132 BPM']
-const VIEWS = ['≡ List', '⊞ Board', '⊟ Grid']
+const VIEWS: { label: string; id: string }[] = [
+  { label: '≡ List', id: 'List' },
+  { label: '⊞ Board', id: 'Board' },
+  { label: '⊟ Grid', id: 'Grid' },
+]
 
 export function Toolbar(): React.JSX.Element {
-  const { searchQuery, setSearchQuery } = useLibraryStore()
-  const [activeFilter, setActiveFilter] = useState('All')
-  const [activeView, setActiveView] = useState('⊞ Board')
+  const { searchQuery, setSearchQuery, activeFilter, setActiveFilter, activeView, setActiveView } =
+    useLibraryStore()
 
   return (
     <div className="toolbar">
@@ -38,11 +40,11 @@ export function Toolbar(): React.JSX.Element {
       <div className="view-btns">
         {VIEWS.map((v) => (
           <button
-            key={v}
-            className={`vbtn${activeView === v ? ' active' : ''}`}
-            onClick={() => setActiveView(v)}
+            key={v.id}
+            className={`vbtn${activeView === v.id ? ' active' : ''}`}
+            onClick={() => setActiveView(v.id)}
           >
-            {v}
+            {v.label}
           </button>
         ))}
       </div>
