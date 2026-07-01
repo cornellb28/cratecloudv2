@@ -107,6 +107,7 @@ type LibraryState = {
   setActiveFilter: (f: string) => void
   setAudioPort: (port: number) => void
   toggleSelect: (id: number) => void
+  selectTracks: (ids: number[]) => void
   clearSelection: () => void
   moveTrack: (trackId: number, fromCol: string, toCol: string) => void
   bulkMove: (targetCol: string) => void
@@ -201,6 +202,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({ selected })
   },
 
+  selectTracks: (ids) => set({ selected: new Set(ids) }),
   clearSelection: () => set({ selected: new Set() }),
 
   moveTrack: (trackId, fromCol, toCol) => {

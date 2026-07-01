@@ -34,11 +34,12 @@ function TrackPicker({ setlistId, setlistTrackIds, onClose }: {
   const allTracks = Object.values(columns).flat()
   const q = search.toLowerCase()
   const filtered = q
-    ? allTracks.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.artist.toLowerCase().includes(q) ||
-          t.genre.toLowerCase().includes(q)
+    ? allTracks.filter((t) =>
+        [
+          t.title, t.artist, t.genre, t.bpm, t.key, t.energy,
+          t.album, t.year, t.remixer, t.label, t.comment,
+          t.composer, t.grouping, t.format, t.camelot, t.openkey,
+        ].some((v) => v?.toLowerCase().includes(q))
       )
     : allTracks
 

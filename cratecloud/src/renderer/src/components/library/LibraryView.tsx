@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import { useContextMenu } from '../../contexts/ContextMenuContext'
 import { usePlayerStore } from '../../stores/usePlayerStore'
@@ -204,13 +204,14 @@ function ListEditorRow({ track, colSpan, onClose }: {
 export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React.JSX.Element {
   const {
     columns, setActiveTrack, activeTrack, searchQuery, activeFilter, selected, toggleSelect,
-    crates, activeCrateId, setActiveCrate, audioPort,
+    selectTracks, clearSelection, crates, activeCrateId, setActiveCrate, audioPort,
   } = useLibraryStore()
   const { openMenu } = useContextMenu()
   const { playTrack, currentTrack, isPlaying } = usePlayerStore()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
   const [modalTrack, setModalTrack] = useState<Track | null>(null)
+  const lastClickedRef = useRef<number | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -246,11 +247,11 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
         if (activeCrate && !activeCrate.trackIds.has(t.id)) return false
         if (!passesFilter(t)) return false
         if (!q) return true
-        return (
-          t.title.toLowerCase().includes(q) ||
-          t.artist.toLowerCase().includes(q) ||
-          t.genre.toLowerCase().includes(q)
-        )
+        return [
+          t.title, t.artist, t.genre, t.bpm, t.key, t.energy,
+          t.album, t.year, t.remixer, t.label, t.comment,
+          t.composer, t.grouping, t.format, t.camelot, t.openkey,
+        ].some((v) => v?.toLowerCase().includes(q))
       }),
     }))
     .filter((g) => g.tracks.length > 0)
@@ -273,6 +274,24 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
     t.artwork_path && audioPort ? `http://127.0.0.1:${audioPort}${t.artwork_path}` : null
 
   const allFilteredTracks = groups.flatMap((g) => g.tracks)
+  const allFilteredIds = allFilteredTracks.map((t) => t.id)
+  const allSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selected.has(id))
+
+  const handleCheckboxClick = (e: React.MouseEvent, trackId: number) => {
+    e.stopPropagation()
+    if (e.shiftKey && lastClickedRef.current !== null) {
+      const lastIdx = allFilteredIds.indexOf(lastClickedRef.current)
+      const currIdx = allFilteredIds.indexOf(trackId)
+      if (lastIdx !== -1 && currIdx !== -1) {
+        const [from, to] = [Math.min(lastIdx, currIdx), Math.max(lastIdx, currIdx)]
+        const rangeIds = allFilteredIds.slice(from, to + 1)
+        selectTracks([...new Set([...selected, ...rangeIds])])
+        return
+      }
+    }
+    toggleSelect(trackId)
+    lastClickedRef.current = trackId
+  }
 
   /* ── Grid view ── */
   if (gridMode) {
@@ -294,10 +313,15 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
           {allFilteredTracks.map((track) => {
             const art = artUrl(track)
             const isCurrentlyPlaying = currentTrack?.id === track.id
+            const isSelected = selected.has(track.id)
             return (
               <div
                 key={track.id}
-                className={['lib-grid-item', isCurrentlyPlaying ? 'lib-grid-playing' : ''].filter(Boolean).join(' ')}
+                className={[
+                  'lib-grid-item',
+                  isCurrentlyPlaying ? 'lib-grid-playing' : '',
+                  isSelected ? 'lib-grid-selected' : '',
+                ].filter(Boolean).join(' ')}
                 onClick={() => setModalTrack(track)}
                 onDoubleClick={() => track.filepath && playTrack(track)}
                 onContextMenu={(e) => handleContextMenu(e, track, track.title)}
@@ -307,6 +331,14 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                     ? <img src={art} className="lib-grid-img" draggable={false} />
                     : <div className="lib-grid-art-empty">♪</div>
                   }
+                  <div
+                    className={`lib-grid-check${isSelected ? ' checked' : ''}`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(track.id) }}
+                    title={isSelected ? 'Deselect' : 'Select'}
+                  >
+                    {isSelected && '✓'}
+                  </div>
                   <button
                     className={`lib-grid-play-btn${isCurrentlyPlaying ? ' visible' : ''}`}
                     onClick={(e) => {
@@ -370,7 +402,16 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
       <table className="lib-table">
         <thead>
           <tr className="lib-header-row">
-            <th className="lib-th lib-th-check" />
+            <th className="lib-th lib-th-check">
+              <div
+                className={`lib-check${allSelected ? ' checked' : ''}`}
+                onClick={() => allSelected ? clearSelection() : selectTracks(allFilteredIds)}
+                title={allSelected ? 'Deselect all' : 'Select all'}
+                style={{ cursor: 'pointer' }}
+              >
+                {allSelected && <span>✓</span>}
+              </div>
+            </th>
             <th className="lib-th lib-th-num">#</th>
             <th className="lib-th lib-th-art" />
             <th className="lib-th">Title</th>
@@ -420,7 +461,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                     >
                       <td
                         className="lib-td lib-td-check"
-                        onClick={(e) => { e.stopPropagation(); toggleSelect(track.id) }}
+                        onClick={(e) => handleCheckboxClick(e, track.id)}
                       >
                         <div className={`lib-check${isSelected ? ' checked' : ''}`}>
                           {isSelected && <span>✓</span>}
