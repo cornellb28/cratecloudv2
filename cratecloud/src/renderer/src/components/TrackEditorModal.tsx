@@ -190,8 +190,19 @@ export function TrackEditorModal({ track, onClose }: {
             <TagSuggestions field="label" currentValue={form.label ?? ''} onSelect={(v) => set('label', v)} />
           </div>
           <div className="ca-field">
+            <div className="ca-label">Grouping</div>
+            <input className="ca-input" value={form.grouping ?? ''} placeholder="—" onChange={(e) => set('grouping', e.target.value)} />
+            <TagSuggestions field="grouping" currentValue={form.grouping ?? ''} onSelect={(v) => set('grouping', v)} />
+          </div>
+          <div className="ca-field">
+            <div className="ca-label">Composer</div>
+            <input className="ca-input" value={form.composer ?? ''} placeholder="—" onChange={(e) => set('composer', e.target.value)} />
+            <TagSuggestions field="composer" currentValue={form.composer ?? ''} onSelect={(v) => set('composer', v)} />
+          </div>
+          <div className="ca-field">
             <div className="ca-label">Comment</div>
             <input className="ca-input" value={form.comment ?? ''} placeholder="—" onChange={(e) => set('comment', e.target.value)} />
+            <TagSuggestions field="comment" currentValue={form.comment ?? ''} onSelect={(v) => set('comment', v)} />
           </div>
 
           <div className="ca-divider" />
