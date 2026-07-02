@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Track, Setlist, Crate } from '../types/track'
+import { type AdvancedFilters, DEFAULT_ADVANCED_FILTERS, type ActiveTagFilter } from '../utils/searchFilter'
 
 // Mirrors db.ts DbTrackRow — keep in sync
 type DbTrackRow = {
@@ -90,6 +91,8 @@ type LibraryState = {
   activeView: string
   searchQuery: string
   activeFilter: string
+  advancedFilters: AdvancedFilters
+  activeTagFilters: ActiveTagFilter[]
   audioPort: number
   deleteDialog: { trackIds: number[] } | null
   deletePreference: DeletePreference
@@ -105,6 +108,10 @@ type LibraryState = {
   setActiveView: (v: string) => void
   setSearchQuery: (q: string) => void
   setActiveFilter: (f: string) => void
+  setAdvancedFilter: (key: keyof AdvancedFilters, value: string) => void
+  clearAdvancedFilters: () => void
+  toggleTagFilter: (tag: ActiveTagFilter) => void
+  clearTagFilters: () => void
   setAudioPort: (port: number) => void
   toggleSelect: (id: number) => void
   selectTracks: (ids: number[]) => void
@@ -146,6 +153,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activeView: 'Board',
   searchQuery: '',
   activeFilter: 'All',
+  advancedFilters: { ...DEFAULT_ADVANCED_FILTERS },
+  activeTagFilters: [],
   audioPort: 0,
   deleteDialog: null,
   deletePreference: 'ask',
@@ -193,6 +202,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   setActiveView: (v) => set({ activeView: v }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setActiveFilter: (f) => set({ activeFilter: f }),
+  setAdvancedFilter: (key, value) =>
+    set((s) => ({ advancedFilters: { ...s.advancedFilters, [key]: value } })),
+  clearAdvancedFilters: () => set({ advancedFilters: { ...DEFAULT_ADVANCED_FILTERS } }),
+  toggleTagFilter: (tag) =>
+    set((s) => {
+      const already = s.activeTagFilters.findIndex((f) => f.id === tag.id)
+      return {
+        activeTagFilters: already >= 0
+          ? s.activeTagFilters.filter((_, i) => i !== already)
+          : [...s.activeTagFilters, tag],
+      }
+    }),
+  clearTagFilters: () => set({ activeTagFilters: [] }),
   setAudioPort: (port) => set({ audioPort: port }),
 
   toggleSelect: (id) => {

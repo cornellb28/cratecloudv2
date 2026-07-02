@@ -6,6 +6,7 @@ import { useTagStore, type TagField } from '../../stores/useTagStore'
 import { COLUMN_COLORS } from '../../types/track'
 import type { Track } from '../../types/track'
 import { TrackEditorModal } from '../TrackEditorModal'
+import { matchesTrack, matchesTagFilters } from '../../utils/searchFilter'
 
 type GroupedTracks = { name: string; color: string; tracks: Track[] }
 
@@ -17,6 +18,7 @@ function ListEditorRow({ track, colSpan, onClose }: {
 }): React.JSX.Element {
   const { updateTrack, audioPort } = useLibraryStore()
   const { tagsForField } = useTagStore()
+  const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
   const [form, setForm] = useState<Track>({ ...track })
   const [saving, setSaving] = useState(false)
   const [saveNote, setSaveNote] = useState<string | null>(null)
@@ -117,6 +119,20 @@ function ListEditorRow({ track, colSpan, onClose }: {
               }
               <div className="ted-art-overlay">Change</div>
             </div>
+            <button
+              className={`lib-expand-play-btn${currentTrack?.id === track.id ? ' active' : ''}`}
+              onClick={() => {
+                if (currentTrack?.id === track.id) togglePlayPause()
+                else if (track.filepath) playTrack(track)
+              }}
+              disabled={!track.filepath}
+              type="button"
+              title={currentTrack?.id === track.id ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
+            >
+              {currentTrack?.id === track.id
+                ? (isPlaying ? '⏸ Pause' : '▶ Resume')
+                : '▶ Play'}
+            </button>
             <button className="lib-expand-art-btn" onClick={handleArtworkUpload} type="button">
               {artworkSrc ? 'Change art' : '+ Add art'}
             </button>
@@ -203,11 +219,12 @@ function ListEditorRow({ track, colSpan, onClose }: {
 
 export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React.JSX.Element {
   const {
-    columns, setActiveTrack, activeTrack, searchQuery, activeFilter, selected, toggleSelect,
-    selectTracks, clearSelection, crates, activeCrateId, setActiveCrate, audioPort,
+    columns, setActiveTrack, activeTrack, searchQuery, activeFilter, advancedFilters,
+    activeTagFilters, selected, toggleSelect, selectTracks, clearSelection,
+    crates, activeCrateId, setActiveCrate, audioPort,
   } = useLibraryStore()
   const { openMenu } = useContextMenu()
-  const { playTrack, currentTrack, isPlaying } = usePlayerStore()
+  const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
   const [modalTrack, setModalTrack] = useState<Track | null>(null)
@@ -226,18 +243,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const q = searchQuery.toLowerCase()
   const activeCrate = activeCrateId !== null ? crates.find((c) => c.id === activeCrateId) : null
-
-  const passesFilter = (t: Track): boolean => {
-    if (activeFilter === 'Untagged') return !t.bpm || !t.key
-    if (activeFilter === '8A–8B') return t.key === '8A' || t.key === '8B'
-    if (activeFilter === '128–132 BPM') {
-      const bpm = parseFloat(t.bpm)
-      return !isNaN(bpm) && bpm >= 128 && bpm <= 132
-    }
-    return true
-  }
 
   const groups: GroupedTracks[] = Object.entries(columns)
     .map(([col, tracks]) => ({
@@ -245,13 +251,9 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
       color: COLUMN_COLORS[col] ?? '#555',
       tracks: tracks.filter((t) => {
         if (activeCrate && !activeCrate.trackIds.has(t.id)) return false
-        if (!passesFilter(t)) return false
-        if (!q) return true
-        return [
-          t.title, t.artist, t.genre, t.bpm, t.key, t.energy,
-          t.album, t.year, t.remixer, t.label, t.comment,
-          t.composer, t.grouping, t.format, t.camelot, t.openkey,
-        ].some((v) => v?.toLowerCase().includes(q))
+        if (activeFilter === 'Untagged' && (t.bpm && t.key)) return false
+        if (!matchesTrack(t, searchQuery, advancedFilters)) return false
+        return matchesTagFilters(t, activeTagFilters)
       }),
     }))
     .filter((g) => g.tracks.length > 0)
@@ -363,7 +365,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
           })}
           {allFilteredTracks.length === 0 && (
             <div className="lib-empty" style={{ gridColumn: '1/-1' }}>
-              {q ? 'No tracks match your search.' : (
+              {searchQuery.trim() ? 'No tracks match your search.' : (
                 <>
                   <div className="lib-empty-icon">⬇</div>
                   <div className="lib-empty-title">Drop music here to import</div>
@@ -469,8 +471,8 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                       </td>
                       <td
                         className="lib-td lib-td-num"
-                        onClick={(e) => { e.stopPropagation(); if (track.filepath) playTrack(track) }}
-                        title="Play"
+                        onClick={(e) => { e.stopPropagation(); if (isCurrentlyPlaying) togglePlayPause(); else if (track.filepath) playTrack(track) }}
+                        title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
                       >
                         {isCurrentlyPlaying
                           ? <span className="lib-num-playing">{isPlaying ? '▶' : '⏸'}</span>
@@ -515,7 +517,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
 
       {groups.length === 0 && (
         <div className="lib-empty">
-          {q ? (
+          {searchQuery.trim() ? (
             'No tracks match your search.'
           ) : (
             <>

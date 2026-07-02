@@ -11,7 +11,7 @@ type Props = { track: Track; col: string }
 
 export function TrackCard({ track, col }: Props): React.JSX.Element {
   const { selected, toggleSelect, audioPort } = useLibraryStore()
-  const { playTrack } = usePlayerStore()
+  const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
   const { openMenu } = useContextMenu()
   const isSelected = selected.has(track.id)
 
@@ -43,7 +43,8 @@ export function TrackCard({ track, col }: Props): React.JSX.Element {
     }
     if (e.key === 'p' || e.key === 'P') {
       e.preventDefault()
-      if (track.filepath) playTrack(track)
+      if (currentTrack?.id === track.id) togglePlayPause()
+      else if (track.filepath) playTrack(track)
     }
   }
 

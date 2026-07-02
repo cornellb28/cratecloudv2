@@ -11,6 +11,7 @@ type PlayerState = {
   playTrack: (track: Track) => void
   setIsPlaying: (v: boolean) => void
   togglePlay: () => void
+  togglePlayPause: () => void
   setVolume: (v: number) => void
   setCurrentTime: (t: number) => void
   setDuration: (d: number) => void
@@ -25,10 +26,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   playTrack: (track) => set({ currentTrack: track, isPlaying: true, currentTime: 0, duration: 0 }),
   setIsPlaying: (v) => set({ isPlaying: v }),
-  togglePlay: () => {
-    const { isPlaying } = get()
-    set({ isPlaying: !isPlaying })
-  },
+  togglePlay: () => set({ isPlaying: !get().isPlaying }),
+  togglePlayPause: () => set({ isPlaying: !get().isPlaying }),
   setVolume: (v) => set({ volume: v }),
   setCurrentTime: (t) => set({ currentTime: t }),
   setDuration: (d) => set({ duration: d }),

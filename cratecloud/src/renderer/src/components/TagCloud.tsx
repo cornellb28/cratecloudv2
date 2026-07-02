@@ -9,7 +9,7 @@ const DEFAULT_COLOR = CRATE_COLORS[0]
 
 export function TagCloud(): React.JSX.Element {
   const { tags, tagsForField, addTag, removeTag } = useTagStore()
-  const { activeTrack, selected, updateTrack, allTracks } = useLibraryStore()
+  const { activeTrack, selected, updateTrack, allTracks, activeTagFilters, toggleTagFilter } = useLibraryStore()
 
   const [expanded, setExpanded] = useState<Set<TagField>>(new Set())
   const [adding, setAdding] = useState<TagField | null>(null)
@@ -85,14 +85,26 @@ export function TagCloud(): React.JSX.Element {
     setAdding(null)
   }
 
+  // Filter mode: no track selected or active → clicking a chip toggles a library filter
+  const filterMode = selected.size === 0 && !activeTrack
   const canApply = selected.size > 0 || !!activeTrack
+
   const applyHint = selected.size > 0
     ? `Apply to ${selected.size} selected track${selected.size > 1 ? 's' : ''}`
     : activeTrack
       ? `Apply to "${activeTrack.title}"`
-      : 'Select a track first'
+      : ''
 
-  // Collapse all / expand all controls
+  const handleChipClick = (field: TagField, id: number, value: string) => {
+    if (filterMode) {
+      toggleTagFilter({ id, field, value })
+    } else {
+      applyTag(field, value)
+    }
+  }
+
+  const isActiveFilter = (id: number) => activeTagFilters.some((f) => f.id === id)
+
   const allExpanded = TAG_FIELDS.every((f) => expanded.has(f))
 
   return (
@@ -107,6 +119,18 @@ export function TagCloud(): React.JSX.Element {
           {allExpanded ? '−' : '+'}
         </button>
       </div>
+
+      {/* Mode hint */}
+      {tags.length > 0 && (
+        <div className="tc-mode-hint">
+          {filterMode
+            ? activeTagFilters.length > 0
+              ? `Filtering by ${activeTagFilters.length} tag${activeTagFilters.length > 1 ? 's' : ''} — click to remove`
+              : 'Click a tag to filter library'
+            : applyHint
+          }
+        </div>
+      )}
 
       {tags.length === 0 && !TAG_FIELDS.some((f) => expanded.has(f)) && (
         <div className="sb-empty">No tags yet — expand a field to create one</div>
@@ -136,22 +160,42 @@ export function TagCloud(): React.JSX.Element {
             {isExpanded && (
               <>
                 {fieldTags.length > 0 && (
-                  <div className="tc-chips" title={!canApply ? applyHint : undefined}>
-                    {fieldTags.map((tag) => (
-                      <div
-                        key={tag.id}
-                        className={`tc-chip${!canApply ? ' tc-chip-dim' : ''}`}
-                        style={{ borderColor: tag.color, color: tag.color }}
-                        onClick={() => applyTag(field, tag.value)}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          setTagMenu({ id: tag.id, x: e.clientX, y: e.clientY })
-                        }}
-                        title={canApply ? applyHint : 'Select a track to apply this tag'}
-                      >
-                        {tag.value}
-                      </div>
-                    ))}
+                  <div className="tc-chips">
+                    {fieldTags.map((tag) => {
+                      const active = isActiveFilter(tag.id)
+                      return (
+                        <div
+                          key={tag.id}
+                          className={[
+                            'tc-chip',
+                            !canApply && !filterMode ? 'tc-chip-dim' : '',
+                            active ? 'tc-chip-filter-on' : '',
+                          ].filter(Boolean).join(' ')}
+                          style={{
+                            borderColor: tag.color,
+                            color: active ? '#fff' : tag.color,
+                            background: active ? tag.color + '44' : 'none',
+                          }}
+                          onClick={() => handleChipClick(field, tag.id, tag.value)}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            setTagMenu({ id: tag.id, x: e.clientX, y: e.clientY })
+                          }}
+                          title={
+                            filterMode
+                              ? active
+                                ? `Remove "${tag.value}" filter`
+                                : `Filter library by "${tag.value}"`
+                              : canApply
+                                ? applyHint
+                                : 'Select a track to apply this tag'
+                          }
+                        >
+                          {active && <span className="tc-chip-filter-icon">⊛ </span>}
+                          {tag.value}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 

@@ -121,7 +121,7 @@ export function SetlistView(): React.JSX.Element {
     removeTrack, reorder, exportToSerato,
   } = useSetlistStore()
   const { columns } = useLibraryStore()
-  const { playTrack, currentTrack, isPlaying } = usePlayerStore()
+  const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
 
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -357,8 +357,8 @@ export function SetlistView(): React.JSX.Element {
                         <td className="lib-td sl-td-drag" title="Drag to reorder">⠿</td>
                         <td
                           className="lib-td lib-td-num"
-                          onClick={() => track.filepath && playTrack(track)}
-                          title="Play"
+                          onClick={() => { if (isCurrentlyPlaying) togglePlayPause(); else if (track.filepath) playTrack(track) }}
+                          title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
                         >
                           {isCurrentlyPlaying
                             ? <span className="lib-num-playing">{isPlaying ? '▶' : '⏸'}</span>
