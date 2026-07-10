@@ -1,14 +1,32 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import { useContextMenu } from '../../contexts/ContextMenuContext'
 import { usePlayerStore } from '../../stores/usePlayerStore'
-import { useTagStore, type TagField } from '../../stores/useTagStore'
 import { COLUMN_COLORS } from '../../types/track'
 import type { Track } from '../../types/track'
 import { TrackEditorModal } from '../TrackEditorModal'
+import { TagInput } from '../TagInput'
 import { matchesTrack, matchesTagFilters } from '../../utils/searchFilter'
+import { useFolderStore } from '../../stores/useFolderStore'
 
 type GroupedTracks = { name: string; color: string; tracks: Track[] }
+
+function buildTrackMeta(f: Track): Record<string, string | undefined> {
+  return {
+    title: f.title || undefined,
+    artist: f.artist || undefined,
+    album: f.album || undefined,
+    genre: f.genre || undefined,
+    bpm: f.bpm || undefined,
+    key: f.key || undefined,
+    year: f.year || undefined,
+    remixer: f.remixer || undefined,
+    grouping: f.grouping || undefined,
+    composer: f.composer || undefined,
+    comment: f.comment || undefined,
+    label: f.label || undefined,
+  }
+}
 
 /* ── Inline editor rendered as a table row ── */
 function ListEditorRow({ track, colSpan, onClose }: {
@@ -17,56 +35,64 @@ function ListEditorRow({ track, colSpan, onClose }: {
   onClose: () => void
 }): React.JSX.Element {
   const { updateTrack, audioPort } = useLibraryStore()
-  const { tagsForField } = useTagStore()
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
   const [form, setForm] = useState<Track>({ ...track })
-  const [saving, setSaving] = useState(false)
-  const [saveNote, setSaveNote] = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
   const [artworkSrc, setArtworkSrc] = useState<string | undefined>(
     track.artwork_path && audioPort
       ? `http://127.0.0.1:${audioPort}${track.artwork_path}`
       : undefined
   )
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const formRef = useRef<Track>({ ...track })
+  const pendingRef = useRef(false)
+  const mountedRef = useRef(true)
+  const isFirstRender = useRef(true)
 
-  const set = (field: keyof Track, value: string) =>
-    setForm((f) => ({ ...f, [field]: value }))
+  useEffect(() => { return () => { mountedRef.current = false } }, [])
 
-  const handleSave = async () => {
-    setSaving(true)
-    updateTrack(form.id, form)
-    if (form.filepath) {
-      try {
-        const meta: Record<string, string | undefined> = {
-          title: form.title || undefined,
-          artist: form.artist || undefined,
-          album: form.album || undefined,
-          genre: form.genre || undefined,
-          bpm: form.bpm || undefined,
-          key: form.key || undefined,
-          year: form.year || undefined,
-          remixer: form.remixer || undefined,
-          grouping: form.grouping || undefined,
-          composer: form.composer || undefined,
-          comment: form.comment || undefined,
-          label: form.label || undefined,
-        }
-        const r = await window.api.editTags(form.filepath, meta, true)
-        if (r.success) {
-          setSaveNote(r.serato_written ? 'Saved · Serato updated' : 'Saved')
-          setSaving(false)
-          setTimeout(onClose, 700)
-          return
-        }
-        setSaveNote(`Error: ${r.error}`)
-      } catch (err) {
-        setSaveNote(`Error: ${String(err)}`)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    pendingRef.current = true
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setSaveStatus('pending')
+    debounceRef.current = setTimeout(() => {
+      pendingRef.current = false
+      debounceRef.current = null
+      const f = formRef.current
+      if (mountedRef.current) setSaveStatus('saving')
+      updateTrack(f.id, f)
+      if (f.filepath) {
+        window.api.editTags(f.filepath, buildTrackMeta(f), true)
+          .then((r) => { if (mountedRef.current) setSaveStatus(r.success ? 'saved' : 'error') })
+          .catch(() => { if (mountedRef.current) setSaveStatus('error') })
+      } else {
+        if (mountedRef.current) setSaveStatus('saved')
       }
-    } else {
-      setSaving(false)
-      setTimeout(onClose, 700)
-      return
+    }, 1000)
+  }, [form])
+
+  useEffect(() => {
+    if (saveStatus !== 'saved') return
+    const t = setTimeout(() => { if (mountedRef.current) setSaveStatus('idle') }, 2000)
+    return () => clearTimeout(t)
+  }, [saveStatus])
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current && pendingRef.current) {
+        clearTimeout(debounceRef.current)
+        const f = formRef.current
+        updateTrack(f.id, f)
+        if (f.filepath) window.api.editTags(f.filepath, buildTrackMeta(f), true).catch(() => {})
+      }
     }
-    setSaving(false)
+  }, [])
+
+  const set = (field: keyof Track, value: string) => {
+    const next = { ...formRef.current, [field]: value }
+    formRef.current = next
+    setForm(next)
   }
 
   const handleArtworkUpload = async () => {
@@ -75,35 +101,6 @@ function ListEditorRow({ track, colSpan, onClose }: {
       updateTrack(track.id, { artwork_path: saved } as Partial<Track>)
       if (audioPort) setArtworkSrc(`http://127.0.0.1:${audioPort}${saved}?t=${Date.now()}`)
     }
-  }
-
-  const TagSuggestions = ({ field, currentValue, onSelect }: {
-    field: TagField; currentValue: string; onSelect: (v: string) => void
-  }) => {
-    const tags = tagsForField(field)
-    if (!tags.length) return null
-    return (
-      <div className="insp-tag-suggestions">
-        {tags.map((tag) => {
-          const already = currentValue.split('/').map((s) => s.trim()).includes(tag.value)
-          return (
-            <button
-              key={tag.id}
-              className={`insp-tag-chip${already ? ' insp-tag-chip-active' : ''}`}
-              style={{ borderColor: tag.color, color: tag.color }}
-              onClick={() => {
-                if (already) return
-                const parts = currentValue.split('/').map((s) => s.trim()).filter(Boolean)
-                onSelect([...parts, tag.value].join('/'))
-              }}
-              type="button"
-            >
-              {tag.value}
-            </button>
-          )
-        })}
-      </div>
-    )
   }
 
   return (
@@ -169,8 +166,7 @@ function ListEditorRow({ track, colSpan, onClose }: {
             <div className="ca-row">
               <div className="ca-field">
                 <div className="ca-label">Genre</div>
-                <input className="ca-input" value={form.genre} placeholder="—" onChange={(e) => set('genre', e.target.value)} />
-                <TagSuggestions field="genre" currentValue={form.genre ?? ''} onSelect={(v) => set('genre', v)} />
+                <TagInput field="genre" value={form.genre ?? ''} onChange={(v) => set('genre', v)} />
               </div>
               <div className="ca-field">
                 <div className="ca-label">Album</div>
@@ -190,38 +186,35 @@ function ListEditorRow({ track, colSpan, onClose }: {
             <div className="ca-row">
               <div className="ca-field">
                 <div className="ca-label">Remixer</div>
-                <input className="ca-input" value={form.remixer ?? ''} placeholder="—" onChange={(e) => set('remixer', e.target.value)} />
-                <TagSuggestions field="remixer" currentValue={form.remixer ?? ''} onSelect={(v) => set('remixer', v)} />
+                <TagInput field="remixer" value={form.remixer ?? ''} onChange={(v) => set('remixer', v)} />
               </div>
               <div className="ca-field">
                 <div className="ca-label">Label</div>
-                <input className="ca-input" value={form.label ?? ''} placeholder="—" onChange={(e) => set('label', e.target.value)} />
-                <TagSuggestions field="label" currentValue={form.label ?? ''} onSelect={(v) => set('label', v)} />
+                <TagInput field="label" value={form.label ?? ''} onChange={(v) => set('label', v)} />
               </div>
             </div>
             <div className="ca-row">
               <div className="ca-field">
                 <div className="ca-label">Grouping</div>
-                <input className="ca-input" value={form.grouping ?? ''} placeholder="—" onChange={(e) => set('grouping', e.target.value)} />
-                <TagSuggestions field="grouping" currentValue={form.grouping ?? ''} onSelect={(v) => set('grouping', v)} />
+                <TagInput field="grouping" value={form.grouping ?? ''} onChange={(v) => set('grouping', v)} />
               </div>
               <div className="ca-field">
                 <div className="ca-label">Composer</div>
-                <input className="ca-input" value={form.composer ?? ''} placeholder="—" onChange={(e) => set('composer', e.target.value)} />
-                <TagSuggestions field="composer" currentValue={form.composer ?? ''} onSelect={(v) => set('composer', v)} />
+                <TagInput field="composer" value={form.composer ?? ''} onChange={(v) => set('composer', v)} />
               </div>
             </div>
             <div className="ca-field">
               <div className="ca-label">Comment</div>
-              <input className="ca-input" value={form.comment ?? ''} placeholder="—" onChange={(e) => set('comment', e.target.value)} />
-              <TagSuggestions field="comment" currentValue={form.comment ?? ''} onSelect={(v) => set('comment', v)} />
+              <TagInput field="comment" value={form.comment ?? ''} onChange={(v) => set('comment', v)} />
             </div>
 
             <div className="lib-expand-actions">
-              {saveNote && <span className="lib-expand-save-note">{saveNote}</span>}
-              <button className="ca-save-btn" style={{ width: 'auto', padding: '7px 20px' }} onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
+              <div className="as-status">
+                {saveStatus === 'pending' && <span className="as-pending">Unsaved…</span>}
+                {saveStatus === 'saving' && <span className="as-saving">Saving…</span>}
+                {saveStatus === 'saved' && <span className="as-saved">✓ Saved</span>}
+                {saveStatus === 'error' && <span className="as-error">⚠ Save failed</span>}
+              </div>
             </div>
           </div>
         </div>
@@ -232,16 +225,22 @@ function ListEditorRow({ track, colSpan, onClose }: {
 
 export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React.JSX.Element {
   const {
-    columns, setActiveTrack, activeTrack, searchQuery, activeFilter, advancedFilters,
+    columns, boards, setActiveTrack, activeTrack, searchQuery, activeFilter, advancedFilters,
     activeTagFilters, selected, toggleSelect, selectTracks, clearSelection,
-    crates, activeCrateId, setActiveCrate, audioPort,
+    crates, activeCrateId, setActiveCrate, activeFolderId, audioPort,
   } = useLibraryStore()
+  const { allDescendantIds } = useFolderStore()
   const { openMenu } = useContextMenu()
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
   const [modalTrack, setModalTrack] = useState<Track | null>(null)
   const lastClickedRef = useRef<number | null>(null)
+
+  const boardColorMap = useMemo(
+    () => Object.fromEntries(boards.map((b) => [b.name, b.color])),
+    [boards]
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -257,19 +256,28 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
   }, [])
 
   const activeCrate = activeCrateId !== null ? crates.find((c) => c.id === activeCrateId) : null
+  const activeFolderIds = activeFolderId !== null ? allDescendantIds(activeFolderId) : null
 
   const groups: GroupedTracks[] = Object.entries(columns)
     .map(([col, tracks]) => ({
       name: col,
-      color: COLUMN_COLORS[col] ?? '#555',
+      color: boardColorMap[col] ?? COLUMN_COLORS[col] ?? '#555',
       tracks: tracks.filter((t) => {
         if (activeCrate && !activeCrate.trackIds.has(t.id)) return false
+        if (activeFolderIds && !activeFolderIds.has(t.folder_id ?? -1)) return false
         if (activeFilter === 'Untagged' && (t.bpm && t.key)) return false
         if (!matchesTrack(t, searchQuery, advancedFilters)) return false
         return matchesTagFilters(t, activeTagFilters)
       }),
     }))
     .filter((g) => g.tracks.length > 0)
+
+  // Map trackId → board info, used by flat grid view
+  const trackBoardMap = useMemo(() => {
+    const map = new Map<number, { name: string; color: string }>()
+    groups.forEach((g) => g.tracks.forEach((t) => map.set(t.id, { name: g.name, color: g.color })))
+    return map
+  }, [groups])
 
   const totalTracks = groups.reduce((n, g) => n + g.tracks.length, 0)
 
@@ -329,6 +337,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
             const art = artUrl(track)
             const isCurrentlyPlaying = currentTrack?.id === track.id
             const isSelected = selected.has(track.id)
+            const board = trackBoardMap.get(track.id)
             return (
               <div
                 key={track.id}
@@ -339,7 +348,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                 ].filter(Boolean).join(' ')}
                 onClick={() => setModalTrack(track)}
                 onDoubleClick={() => track.filepath && playTrack(track)}
-                onContextMenu={(e) => handleContextMenu(e, track, track.title)}
+                onContextMenu={(e) => handleContextMenu(e, track, board?.name ?? '')}
               >
                 <div className="lib-grid-art">
                   {art
@@ -373,6 +382,13 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                   {track.bpm && <span className="lib-tag bpm">{track.bpm}</span>}
                   {track.key && <span className="lib-tag key">{track.key}</span>}
                 </div>
+                {board && (
+                  <div className="lib-grid-board">
+                    <span className="lib-grid-board-dot" style={{ background: board.color }} />
+                    <span className="lib-grid-board-name">{board.name}</span>
+                    {track.status_is_manual && <span className="lib-grid-board-pin">⚲</span>}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -437,13 +453,14 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
             <th className="lib-th lib-th-mono">Energy</th>
             <th className="lib-th lib-th-mono">Duration</th>
             <th className="lib-th lib-th-mono">Format</th>
+            <th className="lib-th lib-th-board">Board</th>
           </tr>
         </thead>
         <tbody>
           {groups.map(({ name, color, tracks }) => (
             <React.Fragment key={name}>
               <tr className="lib-group-row" onClick={() => toggleCollapse(name)}>
-                <td colSpan={11}>
+                <td colSpan={12}>
                   <span className="lib-group-chevron">{collapsed.has(name) ? '▶' : '▼'}</span>
                   <span className="lib-group-dot" style={{ background: color }} />
                   <span className="lib-group-name">{name}</span>
@@ -488,7 +505,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                         title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
                       >
                         {isCurrentlyPlaying
-                          ? <span className="lib-num-playing">{isPlaying ? '▶' : '⏸'}</span>
+                          ? <span className="lib-num-playing">{isPlaying ? '⏸' : '▶'}</span>
                           : <><span className="lib-num-idx">{i + 1}</span><span className="lib-num-play">▶</span></>
                         }
                       </td>
@@ -511,12 +528,19 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                       </td>
                       <td className="lib-td lib-td-mono">{track.duration_str || <span className="lib-dim">—</span>}</td>
                       <td className="lib-td lib-td-mono">{track.format || <span className="lib-dim">—</span>}</td>
+                      <td className="lib-td lib-td-board">
+                        <div className="lib-board-pill" style={{ '--board-color': color } as React.CSSProperties}>
+                          <span className="lib-board-dot" style={{ background: color }} />
+                          <span className="lib-board-name">{name}</span>
+                          {track.status_is_manual && <span className="lib-board-pin">⚲</span>}
+                        </div>
+                      </td>
                     </tr>
 
                     {isExpanded && (
                       <ListEditorRow
                         track={track}
-                        colSpan={11}
+                        colSpan={12}
                         onClose={() => setExpandedTrackId(null)}
                       />
                     )}

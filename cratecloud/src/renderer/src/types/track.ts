@@ -6,7 +6,9 @@ export type Track = {
   key: string
   genre: string
   energy: string
+  status_is_manual?: boolean  // true = user pinned board; false = auto-computed
   folder?: string        // basename of the imported folder, for Library grouping
+  folder_id?: number     // FK into folders table — authoritative hierarchy reference
   filepath?: string
   camelot?: string
   openkey?: string
@@ -32,6 +34,18 @@ export type Crate = {
   trackIds: Set<number>
 }
 
+export type Board = {
+  id: number
+  name: string
+  color: string
+  position: number
+  created_at: number
+  // null = manual-only (never auto-assigned)
+  // []   = fallback (all tracks qualify — used for "Untagged")
+  // [...] = required Track field names that must all be non-empty
+  criteria: string[] | null
+}
+
 export const CRATE_COLORS = [
   '#7f77dd', '#378add', '#1d9e75', '#d85a30', '#d4537e',
   '#ba7517', '#3d9e9e', '#9e3d9e', '#5a9e3d', '#c45c8a',
@@ -46,8 +60,9 @@ export type Setlist = {
   trackIds: number[]
 }
 
+// Kept as fallback for LibraryView list/grid color pills before boards load from DB
 export const COLUMN_COLORS: Record<string, string> = {
-  Untagged: '#888',
+  Untagged: '#888888',
   Tagged: '#378add',
   'Crate ready': '#1d9e75',
   'Gig ready': '#7f77dd',

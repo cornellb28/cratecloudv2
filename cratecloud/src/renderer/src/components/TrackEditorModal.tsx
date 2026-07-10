@@ -1,38 +1,25 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Track } from '../types/track'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { usePlayerStore } from '../stores/usePlayerStore'
-import { useTagStore, type TagField } from '../stores/useTagStore'
+import { TagInput } from './TagInput'
 
-function TagSuggestions({ field, currentValue, onSelect }: {
-  field: TagField; currentValue: string; onSelect: (v: string) => void
-}): React.JSX.Element | null {
-  const { tagsForField } = useTagStore()
-  const tags = tagsForField(field)
-  if (!tags.length) return null
-  return (
-    <div className="insp-tag-suggestions">
-      {tags.map((tag) => {
-        const already = currentValue.split('/').map((s) => s.trim()).includes(tag.value)
-        return (
-          <button
-            key={tag.id}
-            className={`insp-tag-chip${already ? ' insp-tag-chip-active' : ''}`}
-            style={{ borderColor: tag.color, color: tag.color }}
-            onClick={() => {
-              if (already) return
-              const parts = currentValue.split('/').map((s) => s.trim()).filter(Boolean)
-              onSelect([...parts, tag.value].join('/'))
-            }}
-            type="button"
-          >
-            {tag.value}
-          </button>
-        )
-      })}
-    </div>
-  )
+function buildTrackMeta(f: Track): Record<string, string | undefined> {
+  return {
+    title: f.title || undefined,
+    artist: f.artist || undefined,
+    album: f.album || undefined,
+    genre: f.genre || undefined,
+    bpm: f.bpm || undefined,
+    key: f.key || undefined,
+    year: f.year || undefined,
+    remixer: f.remixer || undefined,
+    grouping: f.grouping || undefined,
+    composer: f.composer || undefined,
+    comment: f.comment || undefined,
+    label: f.label || undefined,
+  }
 }
 
 export function TrackEditorModal({ track, onClose }: {
@@ -43,13 +30,19 @@ export function TrackEditorModal({ track, onClose }: {
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
   const isThisPlaying = currentTrack?.id === track.id
   const [form, setForm] = useState<Track>({ ...track })
-  const [saving, setSaving] = useState(false)
-  const [saveNote, setSaveNote] = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
   const [artworkSrc, setArtworkSrc] = useState<string | undefined>(
     track.artwork_path && audioPort
       ? `http://127.0.0.1:${audioPort}${track.artwork_path}`
       : undefined
   )
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const formRef = useRef<Track>({ ...track })
+  const pendingRef = useRef(false)
+  const mountedRef = useRef(true)
+  const isFirstRender = useRef(true)
+
+  useEffect(() => { return () => { mountedRef.current = false } }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -61,45 +54,48 @@ export function TrackEditorModal({ track, onClose }: {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, togglePlayPause])
 
-  const set = (field: keyof Track, value: string) =>
-    setForm((f) => ({ ...f, [field]: value }))
-
-  const handleSave = async () => {
-    setSaving(true)
-    updateTrack(form.id, form)
-    if (form.filepath) {
-      try {
-        const meta: Record<string, string | undefined> = {
-          title: form.title || undefined,
-          artist: form.artist || undefined,
-          album: form.album || undefined,
-          genre: form.genre || undefined,
-          bpm: form.bpm || undefined,
-          key: form.key || undefined,
-          year: form.year || undefined,
-          remixer: form.remixer || undefined,
-          grouping: form.grouping || undefined,
-          composer: form.composer || undefined,
-          comment: form.comment || undefined,
-          label: form.label || undefined,
-        }
-        const r = await window.api.editTags(form.filepath, meta, true)
-        if (r.success) {
-          setSaveNote(r.serato_written ? 'Saved · Serato updated' : 'Saved')
-          setSaving(false)
-          setTimeout(onClose, 700)
-          return
-        }
-        setSaveNote(`Error: ${r.error}`)
-      } catch (err) {
-        setSaveNote(`Error: ${String(err)}`)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    pendingRef.current = true
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setSaveStatus('pending')
+    debounceRef.current = setTimeout(() => {
+      pendingRef.current = false
+      debounceRef.current = null
+      const f = formRef.current
+      if (mountedRef.current) setSaveStatus('saving')
+      updateTrack(f.id, f)
+      if (f.filepath) {
+        window.api.editTags(f.filepath, buildTrackMeta(f), true)
+          .then((r) => { if (mountedRef.current) setSaveStatus(r.success ? 'saved' : 'error') })
+          .catch(() => { if (mountedRef.current) setSaveStatus('error') })
+      } else {
+        if (mountedRef.current) setSaveStatus('saved')
       }
-    } else {
-      setSaving(false)
-      setTimeout(onClose, 700)
-      return
+    }, 1000)
+  }, [form])
+
+  useEffect(() => {
+    if (saveStatus !== 'saved') return
+    const t = setTimeout(() => { if (mountedRef.current) setSaveStatus('idle') }, 2000)
+    return () => clearTimeout(t)
+  }, [saveStatus])
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current && pendingRef.current) {
+        clearTimeout(debounceRef.current)
+        const f = formRef.current
+        updateTrack(f.id, f)
+        if (f.filepath) window.api.editTags(f.filepath, buildTrackMeta(f), true).catch(() => {})
+      }
     }
-    setSaving(false)
+  }, [])
+
+  const set = (field: keyof Track, value: string) => {
+    const next = { ...formRef.current, [field]: value }
+    formRef.current = next
+    setForm(next)
   }
 
   const handleArtworkUpload = async () => {
@@ -159,8 +155,7 @@ export function TrackEditorModal({ track, onClose }: {
           </div>
           <div className="ca-field">
             <div className="ca-label">Genre</div>
-            <input className="ca-input" value={form.genre} placeholder="—" onChange={(e) => set('genre', e.target.value)} />
-            <TagSuggestions field="genre" currentValue={form.genre ?? ''} onSelect={(v) => set('genre', v)} />
+            <TagInput field="genre" value={form.genre ?? ''} onChange={(v) => set('genre', v)} />
           </div>
           <div className="ca-row">
             <div className="ca-field">
@@ -181,28 +176,23 @@ export function TrackEditorModal({ track, onClose }: {
 
           <div className="ca-field">
             <div className="ca-label">Remixer</div>
-            <input className="ca-input" value={form.remixer ?? ''} placeholder="—" onChange={(e) => set('remixer', e.target.value)} />
-            <TagSuggestions field="remixer" currentValue={form.remixer ?? ''} onSelect={(v) => set('remixer', v)} />
+            <TagInput field="remixer" value={form.remixer ?? ''} onChange={(v) => set('remixer', v)} />
           </div>
           <div className="ca-field">
             <div className="ca-label">Label</div>
-            <input className="ca-input" value={form.label ?? ''} placeholder="—" onChange={(e) => set('label', e.target.value)} />
-            <TagSuggestions field="label" currentValue={form.label ?? ''} onSelect={(v) => set('label', v)} />
+            <TagInput field="label" value={form.label ?? ''} onChange={(v) => set('label', v)} />
           </div>
           <div className="ca-field">
             <div className="ca-label">Grouping</div>
-            <input className="ca-input" value={form.grouping ?? ''} placeholder="—" onChange={(e) => set('grouping', e.target.value)} />
-            <TagSuggestions field="grouping" currentValue={form.grouping ?? ''} onSelect={(v) => set('grouping', v)} />
+            <TagInput field="grouping" value={form.grouping ?? ''} onChange={(v) => set('grouping', v)} />
           </div>
           <div className="ca-field">
             <div className="ca-label">Composer</div>
-            <input className="ca-input" value={form.composer ?? ''} placeholder="—" onChange={(e) => set('composer', e.target.value)} />
-            <TagSuggestions field="composer" currentValue={form.composer ?? ''} onSelect={(v) => set('composer', v)} />
+            <TagInput field="composer" value={form.composer ?? ''} onChange={(v) => set('composer', v)} />
           </div>
           <div className="ca-field">
             <div className="ca-label">Comment</div>
-            <input className="ca-input" value={form.comment ?? ''} placeholder="—" onChange={(e) => set('comment', e.target.value)} />
-            <TagSuggestions field="comment" currentValue={form.comment ?? ''} onSelect={(v) => set('comment', v)} />
+            <TagInput field="comment" value={form.comment ?? ''} onChange={(v) => set('comment', v)} />
           </div>
 
           <div className="ca-divider" />
@@ -213,11 +203,12 @@ export function TrackEditorModal({ track, onClose }: {
             {track.file_size_mb != null && <span>{track.file_size_mb} MB</span>}
           </div>
 
-          {saveNote && <div className="ca-save-note">{saveNote}</div>}
-
-          <button className="ca-save-btn" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
+          <div className="as-status">
+            {saveStatus === 'pending' && <span className="as-pending">Unsaved…</span>}
+            {saveStatus === 'saving' && <span className="as-saving">Saving…</span>}
+            {saveStatus === 'saved' && <span className="as-saved">✓ Saved</span>}
+            {saveStatus === 'error' && <span className="as-error">⚠ Save failed</span>}
+          </div>
         </div>
       </div>
     </div>,

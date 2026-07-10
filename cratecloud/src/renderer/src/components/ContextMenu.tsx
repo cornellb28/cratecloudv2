@@ -3,14 +3,13 @@ import { useContextMenu } from '../contexts/ContextMenuContext'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { usePlayerStore } from '../stores/usePlayerStore'
 
-const COLUMNS = ['Untagged', 'Tagged', 'Crate ready', 'Gig ready']
 const MENU_W = 200
 
 export function ContextMenu(): React.JSX.Element | null {
   const { menu, closeMenu } = useContextMenu()
   const {
     setActiveTrack, moveTrack, updateTrack, openDeleteDialog, openEditDialog,
-    crates, activeCrateId, addTracksToCrate, removeTracksFromCrate,
+    crates, activeCrateId, addTracksToCrate, removeTracksFromCrate, boards, resetTrackStatus,
   } = useLibraryStore()
   const { playTrack } = usePlayerStore()
   const ref = useRef<HTMLDivElement>(null)
@@ -76,10 +75,16 @@ export function ContextMenu(): React.JSX.Element | null {
       </div>
 
       <div className="ctx-sep" />
-      <div className="ctx-label">Move to crate</div>
-      {COLUMNS.filter((c) => c !== col).map((c) => (
-        <div key={c} className="ctx-item ctx-indent" onClick={() => handleMoveToCol(c)}>
-          <span className="ctx-arrow">›</span> {c}
+      {track.status_is_manual && (
+        <div className="ctx-item ctx-reset" onClick={act(() => void resetTrackStatus(track.id))}>
+          ↺ Reset to auto-board
+        </div>
+      )}
+      <div className="ctx-label">Move to board</div>
+      {boards.filter((b) => b.name !== col).map((b) => (
+        <div key={b.id} className="ctx-item ctx-indent" onClick={() => handleMoveToCol(b.name)}>
+          <span className="ctx-crate-dot" style={{ background: b.color }} />
+          {b.name}
         </div>
       ))}
 

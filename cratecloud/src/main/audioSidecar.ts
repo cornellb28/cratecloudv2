@@ -35,6 +35,7 @@ export type AnalysisResult = {
   error?: string
   artwork_b64?: string | null
   artwork_path?: string | null
+  relative_dir?: string  // set by analyze-folder handler, not the sidecar
 }
 
 export type ProgressEvent = {

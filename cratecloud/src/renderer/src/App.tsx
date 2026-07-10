@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useLibraryStore } from './stores/useLibraryStore'
 import { useTagStore } from './stores/useTagStore'
+import { useFolderStore } from './stores/useFolderStore'
 import { ContextMenuProvider } from './contexts/ContextMenuContext'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
@@ -14,15 +15,19 @@ import { DropOverlay } from './components/DropOverlay'
 import { BoardView } from './components/board/BoardView'
 import { LibraryView } from './components/library/LibraryView'
 import { SetlistView } from './components/setlist/SetlistView'
+import { ArtistExplorer } from './components/ArtistExplorer'
 import { PlayerBar } from './components/PlayerBar'
+import { FolderHierarchyView } from './components/FolderHierarchyView'
 
 function AppInner(): React.JSX.Element {
   const { activeTab, activeView, initFromDb, setAudioPort } = useLibraryStore()
   const { init: initTags } = useTagStore()
+  const { init: initFolders } = useFolderStore()
 
   useEffect(() => {
     initFromDb()
     initTags()
+    initFolders()
     window.api.audio.serverPort().then(setAudioPort)
   }, [])
 
@@ -30,10 +35,10 @@ function AppInner(): React.JSX.Element {
     <div className="app">
       <TitleBar />
       <div className="main">
-        {activeTab !== 'Setlist' && <Sidebar />}
+        {activeTab !== 'Setlist' && activeTab !== 'Artist' && <Sidebar />}
 
         <div className="content">
-          {activeTab !== 'Setlist' && (
+          {activeTab !== 'Setlist' && activeTab !== 'Artist' && (
             <>
               <Toolbar />
               <BulkBar />
@@ -43,6 +48,8 @@ function AppInner(): React.JSX.Element {
           {activeTab === 'Library' && activeView === 'List' && <LibraryView />}
           {activeTab === 'Library' && activeView === 'Board' && <BoardView />}
           {activeTab === 'Library' && activeView === 'Grid' && <LibraryView gridMode />}
+          {activeTab === 'Library' && activeView === 'Folders' && <FolderHierarchyView />}
+          {activeTab === 'Artist' && <ArtistExplorer />}
           {activeTab === 'Setlist' && <SetlistView />}
           {activeTab === 'AI Match' && (
             <div className="view-placeholder">

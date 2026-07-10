@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import { useFolderStore } from '../stores/useFolderStore'
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
 
@@ -10,6 +11,7 @@ function getExt(path: string): string {
 
 export function useImport() {
   const { addTracks, setImportStatus, allTracks } = useLibraryStore()
+  const { init: reinitFolders } = useFolderStore()
   const busyRef = useRef(false)
 
   const importPaths = useCallback(
@@ -33,7 +35,7 @@ export function useImport() {
         const audioFiles = files.filter((p) => AUDIO_EXTENSIONS.has(getExt(p)))
 
         for (const folderPath of folders) {
-          const folderName = folderPath.split('/').pop() ?? folderPath
+          const rootName = folderPath.split('/').pop() ?? folderPath
           const removeListener = window.api.onAnalyzeProgress((p) => {
             setImportStatus({ current: p.current, total: p.total, label: p.file })
           })
@@ -41,7 +43,17 @@ export function useImport() {
             const results = await window.api.analyzeFolder(folderPath)
             const fresh = results.filter((r) => !r.filepath || !knownPaths.has(r.filepath))
             skipped += results.length - fresh.length
-            if (fresh.length) await addTracks(fresh, folderName)
+            if (fresh.length) {
+              // Build folder tree in DB and map each result to its folder_id
+              const relativeDirs = [...new Set(fresh.map((r) => r.relative_dir ?? ''))]
+              const folderIdMap = await window.api.folders.ensureTree(rootName, relativeDirs)
+              await reinitFolders()
+              const withFolderIds = fresh.map((r) => ({
+                ...r,
+                folder_id: folderIdMap[r.relative_dir ?? ''] ?? null,
+              }))
+              await addTracks(withFolderIds, rootName)
+            }
           } finally {
             removeListener()
           }
@@ -84,7 +96,7 @@ export function useImport() {
         busyRef.current = false
       }
     },
-    [addTracks, setImportStatus, allTracks],
+    [addTracks, setImportStatus, allTracks, reinitFolders],
   )
 
   const importFromDialog = useCallback(

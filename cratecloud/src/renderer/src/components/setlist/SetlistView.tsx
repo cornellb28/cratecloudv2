@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSetlistStore } from '../../stores/useSetlistStore'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import { usePlayerStore } from '../../stores/usePlayerStore'
+import { TrackEditorModal } from '../TrackEditorModal'
 import type { Track } from '../../types/track'
 
 function totalDuration(tracks: Track[]): string {
@@ -113,6 +114,195 @@ function TrackPicker({ setlistId, setlistTrackIds, onClose }: {
   )
 }
 
+/* ── Setlist Bulk Edit Modal ──────────────────────────────────────────── */
+function SetlistBulkEditModal({ tracks, onClose }: {
+  tracks: Track[]
+  onClose: () => void
+}): React.JSX.Element {
+  const { updateTrack } = useLibraryStore()
+  const single = tracks.length === 1 ? tracks[0] : null
+
+  const sharedVal = (key: keyof Track) => {
+    const vals = [...new Set(tracks.map((t) => (t[key] as string) ?? ''))]
+    return vals.length === 1 ? vals[0] : ''
+  }
+
+  const [artist, setArtist] = useState(single?.artist ?? sharedVal('artist'))
+  const [bpm, setBpm] = useState(single?.bpm ?? sharedVal('bpm'))
+  const [key, setKey] = useState(single?.key ?? sharedVal('key'))
+  const [genre, setGenre] = useState(single?.genre ?? sharedVal('genre'))
+  const [energy, setEnergy] = useState(single?.energy ?? sharedVal('energy'))
+  const [year, setYear] = useState(single?.year ?? sharedVal('year'))
+
+  const handleSave = () => {
+    for (const track of tracks) {
+      const updates: Partial<Track> = {}
+      if (single) {
+        // Single: save all fields (allow clearing)
+        updates.artist = artist
+        updates.bpm = bpm
+        updates.key = key
+        updates.genre = genre
+        updates.energy = energy
+        updates.year = year
+      } else {
+        // Multi: only apply non-empty fields
+        if (artist) updates.artist = artist
+        if (bpm) updates.bpm = bpm
+        if (key) updates.key = key
+        if (genre) updates.genre = genre
+        if (energy) updates.energy = energy
+        if (year) updates.year = year
+      }
+      if (Object.keys(updates).length) updateTrack(track.id, updates)
+    }
+    onClose()
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if ((e.key === 'Enter') && (e.metaKey || e.ctrlKey)) handleSave()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [artist, bpm, key, genre, energy, year])
+
+  return (
+    <div className="ted-backdrop" onClick={onClose}>
+      <div className="sl-edit-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="sl-edit-modal-header">
+          <div className="sl-edit-modal-title">
+            {single ? `Edit "${single.title}"` : `Edit ${tracks.length} tracks`}
+          </div>
+          <button className="ted-close" onClick={onClose}>✕</button>
+        </div>
+
+        {!single && (
+          <div className="sl-edit-track-list">
+            {tracks.map((t) => (
+              <div key={t.id} className="sl-edit-track-row">
+                <span className="sl-edit-track-title">{t.title}</span>
+                <span className="sl-edit-track-artist">{t.artist || '—'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!single && (
+          <div className="sl-edit-hint">Leave a field blank to keep each track's existing value.</div>
+        )}
+
+        <div className="sl-edit-fields">
+          <div className="ca-field">
+            <div className="ca-label">Artist</div>
+            <input className="ca-input" value={artist} placeholder={single ? '' : '(multiple)'}
+              onChange={(e) => setArtist(e.target.value)} />
+          </div>
+          <div className="ca-row">
+            <div className="ca-field">
+              <div className="ca-label">BPM</div>
+              <input className="ca-input" value={bpm} placeholder={single ? '' : '(multiple)'}
+                onChange={(e) => setBpm(e.target.value)} />
+            </div>
+            <div className="ca-field">
+              <div className="ca-label">Key</div>
+              <input className="ca-input" value={key} placeholder={single ? '' : '(multiple)'}
+                onChange={(e) => setKey(e.target.value)} />
+            </div>
+          </div>
+          <div className="ca-row">
+            <div className="ca-field">
+              <div className="ca-label">Genre</div>
+              <input className="ca-input" value={genre} placeholder={single ? '' : '(multiple)'}
+                onChange={(e) => setGenre(e.target.value)} />
+            </div>
+            <div className="ca-field">
+              <div className="ca-label">Energy (1–10)</div>
+              <input className="ca-input" value={energy} placeholder={single ? '' : '(multiple)'}
+                onChange={(e) => setEnergy(e.target.value)} />
+            </div>
+          </div>
+          <div className="ca-field">
+            <div className="ca-label">Year</div>
+            <input className="ca-input" value={year} placeholder={single ? '' : '(multiple)'}
+              onChange={(e) => setYear(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="sl-edit-modal-footer">
+          <button className="modal-btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="sl-action-btn accent" onClick={handleSave}>
+            {single ? 'Save' : `Apply to ${tracks.length} tracks`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Grid card ────────────────────────────────────────────────────────── */
+function SetlistGridCard({ track, index, selected, onToggleSelect, onPlay, isPlaying, onRemove, onEdit }: {
+  track: Track
+  index: number
+  selected: boolean
+  onToggleSelect: () => void
+  onPlay: () => void
+  isPlaying: boolean
+  onRemove: () => void
+  onEdit: () => void
+}): React.JSX.Element {
+  const { audioPort } = useLibraryStore()
+  const [artSrc, setArtSrc] = useState<string | undefined>(
+    track.artwork_path && audioPort
+      ? `http://127.0.0.1:${audioPort}${track.artwork_path}`
+      : undefined
+  )
+
+  return (
+    <div
+      className={`sl-grid-card${selected ? ' selected' : ''}`}
+      onDoubleClick={onEdit}
+    >
+      <div className="sl-grid-card-top">
+        <button
+          className={`sl-grid-play${isPlaying ? ' playing' : ''}`}
+          onClick={onPlay}
+          title={isPlaying ? 'Playing' : 'Play'}
+        >
+          {isPlaying ? '▶' : index + 1}
+        </button>
+        <label className="sl-grid-check" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} />
+          <span className="sl-grid-check-box" />
+        </label>
+      </div>
+      <div className="sl-grid-art-wrap">
+        {artSrc ? (
+          <img
+            className="sl-grid-art"
+            src={artSrc}
+            onError={() => setArtSrc(undefined)}
+            draggable={false}
+          />
+        ) : (
+          <div className="sl-grid-art-placeholder">♪</div>
+        )}
+      </div>
+      <div className="sl-grid-info">
+        <div className="sl-grid-title" title={track.title}>{track.title}</div>
+        <div className="sl-grid-artist">{track.artist || <span className="lib-dim">—</span>}</div>
+      </div>
+      <div className="sl-grid-tags">
+        {track.bpm && <span className="lib-tag bpm">{track.bpm}</span>}
+        {track.key && <span className="lib-tag key">{track.key}</span>}
+        {track.energy && <span className="lib-tag energy">E{track.energy}</span>}
+      </div>
+      <button className="sl-grid-remove" onClick={onRemove} title="Remove from playlist">✕</button>
+    </div>
+  )
+}
+
 /* ── Main SetlistView ─────────────────────────────────────────────────── */
 export function SetlistView(): React.JSX.Element {
   const {
@@ -131,10 +321,15 @@ export function SetlistView(): React.JSX.Element {
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [editModalTracks, setEditModalTracks] = useState<Track[] | null>(null)
   const renameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { init() }, [])
   useEffect(() => { if (renamingId !== null) renameRef.current?.focus() }, [renamingId])
+  // Clear selection when switching playlists
+  useEffect(() => { setSelectedIds(new Set()) }, [activeId])
 
   const allTracks = Object.values(columns).flat()
   const trackMap = new Map(allTracks.map((t) => [t.id, t]))
@@ -145,6 +340,30 @@ export function SetlistView(): React.JSX.Element {
     .filter((t): t is Track => !!t)
 
   const dur = totalDuration(setlistTracks)
+  const selectedTracks = setlistTracks.filter((t) => selectedIds.has(t.id))
+  const allSelected = setlistTracks.length > 0 && selectedTracks.length === setlistTracks.length
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(setlistTracks.map((t) => t.id)))
+    }
+  }
+
+  const openEditModal = () => {
+    if (selectedTracks.length === 0) return
+    setEditModalTracks(selectedTracks)
+  }
 
   const handleCreate = async () => {
     const name = newName.trim() || 'New Playlist'
@@ -174,7 +393,6 @@ export function SetlistView(): React.JSX.Element {
     setTimeout(() => setExportMsg(null), 5000)
   }
 
-  // Drag-to-reorder within setlist
   const handleDragStart = (idx: number) => setDragIdx(idx)
   const handleDragEnter = (idx: number) => setDragOver(idx)
   const handleDrop = async () => {
@@ -187,19 +405,18 @@ export function SetlistView(): React.JSX.Element {
     setDragOver(null)
   }
 
+  const handlePlay = (track: Track) => {
+    if (currentTrack?.id === track.id) togglePlayPause()
+    else if (track.filepath) playTrack(track)
+  }
+
   return (
     <div className="setlist-container">
       {/* ── Left sidebar ── */}
       <div className="setlist-sidebar">
         <div className="sl-sidebar-head">
           <span>Playlists</span>
-          <button
-            className="sl-new-btn"
-            onClick={() => setCreating(true)}
-            title="New playlist"
-          >
-            +
-          </button>
+          <button className="sl-new-btn" onClick={() => setCreating(true)} title="New playlist">+</button>
         </div>
 
         {creating && (
@@ -211,11 +428,11 @@ export function SetlistView(): React.JSX.Element {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
+                if (e.key === 'Enter') { void handleCreate() }
                 if (e.key === 'Escape') setCreating(false)
               }}
             />
-            <button className="sl-create-ok" onClick={handleCreate} type="button">✓</button>
+            <button className="sl-create-ok" onClick={() => { void handleCreate() }} type="button">✓</button>
           </div>
         )}
 
@@ -225,10 +442,7 @@ export function SetlistView(): React.JSX.Element {
               key={sl.id}
               className={`sl-item${activeId === sl.id ? ' active' : ''}`}
               onClick={() => setActiveId(sl.id)}
-              onDoubleClick={() => {
-                setRenamingId(sl.id)
-                setRenameVal(sl.name)
-              }}
+              onDoubleClick={() => { setRenamingId(sl.id); setRenameVal(sl.name) }}
             >
               <span className="sl-item-icon">♫</span>
               <span className="sl-item-name">{sl.name}</span>
@@ -261,10 +475,10 @@ export function SetlistView(): React.JSX.Element {
                     value={renameVal}
                     onChange={(e) => setRenameVal(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleRename()
+                      if (e.key === 'Enter') { void handleRename() }
                       if (e.key === 'Escape') setRenamingId(null)
                     }}
-                    onBlur={handleRename}
+                    onBlur={() => { void handleRename() }}
                   />
                 ) : (
                   <h2
@@ -281,25 +495,35 @@ export function SetlistView(): React.JSX.Element {
                 </span>
               </div>
               <div className="sl-detail-actions">
-                <button
-                  className="sl-action-btn"
-                  onClick={() => setPickerOpen(true)}
-                  title="Add tracks from your library"
-                >
+                {selectedIds.size > 0 && (
+                  <button className="sl-action-btn" onClick={openEditModal}>
+                    ✎ Edit {selectedIds.size}
+                  </button>
+                )}
+                {/* View toggle */}
+                <div className="sl-view-toggle">
+                  <button
+                    className={`sl-view-btn${viewMode === 'list' ? ' active' : ''}`}
+                    onClick={() => setViewMode('list')}
+                    title="List view"
+                  >
+                    ≡
+                  </button>
+                  <button
+                    className={`sl-view-btn${viewMode === 'grid' ? ' active' : ''}`}
+                    onClick={() => setViewMode('grid')}
+                    title="Grid view"
+                  >
+                    ⊞
+                  </button>
+                </div>
+                <button className="sl-action-btn" onClick={() => setPickerOpen(true)} title="Add tracks from your library">
                   + Add Tracks
                 </button>
-                <button
-                  className="sl-action-btn accent"
-                  onClick={handleExport}
-                  title="Export this playlist as a Serato sub-crate"
-                >
+                <button className="sl-action-btn accent" onClick={() => { void handleExport() }} title="Export as Serato sub-crate">
                   ⟱ Serato
                 </button>
-                <button
-                  className="sl-delete-btn"
-                  onClick={() => deleteSetlist(active.id)}
-                  title="Delete playlist"
-                >
+                <button className="sl-delete-btn" onClick={() => { void deleteSetlist(active.id) }} title="Delete playlist">
                   ✕
                 </button>
               </div>
@@ -311,7 +535,7 @@ export function SetlistView(): React.JSX.Element {
               </div>
             )}
 
-            {/* Track list */}
+            {/* Track content */}
             {setlistTracks.length === 0 ? (
               <div className="sl-tracks-empty">
                 <div>No tracks yet.</div>
@@ -319,11 +543,17 @@ export function SetlistView(): React.JSX.Element {
                   + Add Tracks
                 </button>
               </div>
-            ) : (
+            ) : viewMode === 'list' ? (
               <table className="lib-table">
                 <thead>
                   <tr className="lib-header-row">
                     <th className="lib-th sl-th-drag" />
+                    <th className="lib-th sl-th-check">
+                      <label className="sl-check-label">
+                        <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+                        <span className="sl-check-box" />
+                      </label>
+                    </th>
                     <th className="lib-th lib-th-num">#</th>
                     <th className="lib-th">Title</th>
                     <th className="lib-th">Artist</th>
@@ -338,30 +568,38 @@ export function SetlistView(): React.JSX.Element {
                 <tbody>
                   {setlistTracks.map((track, i) => {
                     const isCurrentlyPlaying = currentTrack?.id === track.id
+                    const isChecked = selectedIds.has(track.id)
                     return (
                       <tr
                         key={track.id}
                         className={[
                           'lib-track-row',
                           isCurrentlyPlaying ? 'lib-playing' : '',
+                          isChecked ? 'sl-row-selected' : '',
                           dragOver === i ? 'sl-drag-over' : '',
                         ].filter(Boolean).join(' ')}
                         draggable
                         onDragStart={() => handleDragStart(i)}
                         onDragEnter={() => handleDragEnter(i)}
                         onDragOver={(e) => e.preventDefault()}
-                        onDrop={handleDrop}
+                        onDrop={() => { void handleDrop() }}
                         onDragEnd={() => { setDragIdx(null); setDragOver(null) }}
-                        onDoubleClick={() => track.filepath && playTrack(track)}
+                        onDoubleClick={() => { setEditModalTracks([track]) }}
                       >
                         <td className="lib-td sl-td-drag" title="Drag to reorder">⠿</td>
+                        <td className="lib-td sl-td-check" onClick={(e) => e.stopPropagation()}>
+                          <label className="sl-check-label">
+                            <input type="checkbox" checked={isChecked} onChange={() => toggleSelect(track.id)} />
+                            <span className="sl-check-box" />
+                          </label>
+                        </td>
                         <td
                           className="lib-td lib-td-num"
-                          onClick={() => { if (isCurrentlyPlaying) togglePlayPause(); else if (track.filepath) playTrack(track) }}
+                          onClick={() => handlePlay(track)}
                           title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
                         >
                           {isCurrentlyPlaying
-                            ? <span className="lib-num-playing">{isPlaying ? '▶' : '⏸'}</span>
+                            ? <span className="lib-num-playing">{isPlaying ? '⏸' : '▶'}</span>
                             : <><span className="lib-num-idx">{i + 1}</span><span className="lib-num-play">▶</span></>
                           }
                         </td>
@@ -381,7 +619,7 @@ export function SetlistView(): React.JSX.Element {
                         <td className="lib-td sl-td-remove">
                           <button
                             className="sl-remove-btn"
-                            onClick={() => removeTrack(active.id, track.id)}
+                            onClick={() => { void removeTrack(active.id, track.id) }}
                             title="Remove from playlist"
                           >
                             ✕
@@ -392,6 +630,22 @@ export function SetlistView(): React.JSX.Element {
                   })}
                 </tbody>
               </table>
+            ) : (
+              <div className="sl-grid">
+                {setlistTracks.map((track, i) => (
+                  <SetlistGridCard
+                    key={track.id}
+                    track={track}
+                    index={i}
+                    selected={selectedIds.has(track.id)}
+                    onToggleSelect={() => toggleSelect(track.id)}
+                    onPlay={() => handlePlay(track)}
+                    isPlaying={currentTrack?.id === track.id && isPlaying}
+                    onRemove={() => { void removeTrack(active.id, track.id) }}
+                    onEdit={() => setEditModalTracks([track])}
+                  />
+                ))}
+              </div>
             )}
           </>
         )}
@@ -402,6 +656,20 @@ export function SetlistView(): React.JSX.Element {
           setlistId={active.id}
           setlistTrackIds={active.trackIds}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {editModalTracks && editModalTracks.length === 1 && (
+        <TrackEditorModal
+          track={editModalTracks[0]}
+          onClose={() => setEditModalTracks(null)}
+        />
+      )}
+
+      {editModalTracks && editModalTracks.length > 1 && (
+        <SetlistBulkEditModal
+          tracks={editModalTracks}
+          onClose={() => setEditModalTracks(null)}
         />
       )}
     </div>

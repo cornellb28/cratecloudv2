@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, basename } from 'path'
+import { join, extname, basename, relative } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile } from 'fs/promises'
@@ -11,12 +11,17 @@ import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import {
   getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
+  autoMoveTracksToColumn, resetTrackStatusManual, updateBoardCriteria,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
   getAllCrateTrackIds, addTracksToCrate, removeTracksFromCrate,
   getTags, insertTag, deleteTag, updateTag,
   getSetlists, createSetlist, renameSetlist, deleteSetlist,
   getSetlistTrackIds, addSetlistTrack, removeSetlistTrack,
   reorderSetlistTracks, getSetlistFilepaths,
+  getBookmarks, insertBookmark, deleteBookmark, updateBookmark,
+  getFolders, insertFolder, renameFolder, updateFolderParent, deleteFolder,
+  updateTrackFolderIds, ensureFolderTree,
+  getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
 } from './db'
 
 // ── Serato crate helpers ──────────────────────────────────────────────────────
@@ -198,12 +203,25 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('analyze-folder', async (event, folderPath: string, writeBack = false) => {
-    const entries = await readdir(folderPath)
-    const files = entries
-      .filter((f) => AUDIO_EXTENSIONS.has(extname(f).toLowerCase()))
-      .map((f) => join(folderPath, f))
+    // Recursively collect all audio files with their path relative to the import root
+    type FileEntry = { filepath: string; relative_dir: string }
+    async function walkAudioFiles(dir: string, acc: FileEntry[]): Promise<void> {
+      const entries = await readdir(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          await walkAudioFiles(full, acc)
+        } else if (AUDIO_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+          const rel = relative(folderPath, dir)
+          acc.push({ filepath: full, relative_dir: rel === '.' || rel === '' ? '' : rel })
+        }
+      }
+    }
 
-    const total = files.length
+    const fileEntries: FileEntry[] = []
+    await walkAudioFiles(folderPath, fileEntries)
+
+    const total = fileEntries.length
     const results: AnalysisResult[] = new Array(total)
     let nextIdx = 0
     let completed = 0
@@ -213,16 +231,17 @@ app.whenReady().then(() => {
       while (true) {
         const i = nextIdx++
         if (i >= total) break
-        const filepath = files[i]
+        const { filepath, relative_dir } = fileEntries[i]
         try {
           const r = await analyzeFile(filepath, { writeBack })
           if (r.success && r.artwork_b64) {
             try { r.artwork_path = await saveArtwork(filepath, r.artwork_b64) } catch { /* non-fatal */ }
             delete r.artwork_b64
           }
+          r.relative_dir = relative_dir
           results[i] = r
         } catch (err) {
-          results[i] = { success: false, filepath, error: String(err) }
+          results[i] = { success: false, filepath, relative_dir, error: String(err) }
         }
         completed++
         event.sender.send('analyze-progress', {
@@ -273,12 +292,19 @@ app.whenReady().then(() => {
 
   // ── File system operations ────────────────────────────────────────────────
   ipcMain.handle('fs:moveFile', async (_event, fromPath: string, toFolder: string) => {
-    const filename = basename(fromPath)
-    const toPath = join(toFolder, filename)
+    const ext = extname(fromPath)
+    const base = basename(fromPath, ext)
+    // Find a non-colliding destination path
+    let toPath = join(toFolder, basename(fromPath))
+    let counter = 1
+    while (true) {
+      try { await stat(toPath); toPath = join(toFolder, `${base} (${counter++})${ext}`) }
+      catch { break } // stat threw → path doesn't exist → safe to use
+      if (counter > 99) throw new Error('Too many filename collisions at destination')
+    }
     try {
       await rename(fromPath, toPath)
     } catch (err) {
-      // Cross-device move: copy then delete
       if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
         await copyFile(fromPath, toPath)
         await unlink(fromPath)
@@ -384,6 +410,55 @@ app.whenReady().then(() => {
   ipcMain.on('window:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
   })
+
+  ipcMain.handle('bookmark:getAll', () => getBookmarks())
+  ipcMain.handle('bookmark:insert', (_e, url: string, label: string) => insertBookmark(url, label))
+  ipcMain.handle('bookmark:delete', (_e, id: number) => deleteBookmark(id))
+  ipcMain.handle('bookmark:update', (_e, id: number, url: string, label: string) => updateBookmark(id, url, label))
+  ipcMain.handle('bookmark:open', (_e, url: string) => shell.openExternal(url))
+
+  // ── Boards ─────────────────────────────────────────────────────────────────
+  ipcMain.handle('board:getAll', () => getBoards())
+  ipcMain.handle('board:insert', (_e, name: string, color: string, position: number) =>
+    insertBoard(name, color, position)
+  )
+  ipcMain.handle('board:rename', (_e, id: number, oldName: string, newName: string) =>
+    renameBoardAndCascade(id, oldName, newName)
+  )
+  ipcMain.handle('board:updateColor', (_e, id: number, color: string) => updateBoardColor(id, color))
+  ipcMain.handle('board:reorder', (_e, entries: { id: number; position: number }[]) =>
+    updateBoardPositions(entries)
+  )
+  ipcMain.handle('board:delete', (_e, id: number, fallbackName: string) =>
+    deleteBoardAndCascade(id, fallbackName)
+  )
+  ipcMain.handle('board:updateCriteria', (_e, id: number, criteria: string[] | null) =>
+    updateBoardCriteria(id, criteria)
+  )
+  ipcMain.handle('db:autoMoveTracks', (_e, ids: number[], column: string) =>
+    autoMoveTracksToColumn(ids, column)
+  )
+  ipcMain.handle('db:resetTrackStatus', (_e, id: number) =>
+    resetTrackStatusManual(id)
+  )
+
+  // ── Folders ────────────────────────────────────────────────────────────────
+  ipcMain.handle('folder:getAll', () => getFolders())
+  ipcMain.handle('folder:insert', (_e, name: string, parentId: number | null) =>
+    insertFolder(name, parentId)
+  )
+  ipcMain.handle('folder:rename', (_e, id: number, name: string) => renameFolder(id, name))
+  ipcMain.handle('folder:move', (_e, id: number, parentId: number | null) =>
+    updateFolderParent(id, parentId)
+  )
+  ipcMain.handle('folder:delete', (_e, id: number) => deleteFolder(id))
+  ipcMain.handle(
+    'folder:updateTrackFolders',
+    (_e, entries: { trackId: number; folderId: number | null }[]) => updateTrackFolderIds(entries)
+  )
+  ipcMain.handle('folder:ensureTree', (_e, rootName: string, relativeDirs: string[]) =>
+    ensureFolderTree(rootName, relativeDirs)
+  )
 
   ipcMain.on('window:maximize', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)

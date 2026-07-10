@@ -11,7 +11,9 @@ export type DbTrackRow = {
   genre: string
   energy: string
   column_name: string
+  status_is_manual: number
   folder: string | null
+  folder_id: number | null
   filepath: string | null
   camelot: string | null
   openkey: string | null
@@ -28,6 +30,22 @@ export type DbTrackRow = {
   label: string | null
   waveform: string | null
   artwork_path: string | null
+}
+
+export type FolderRow = {
+  id: number
+  name: string
+  parent_folder_id: number | null
+  created_at: number
+}
+
+export type BoardRow = {
+  id: number
+  name: string
+  color: string
+  position: number
+  created_at: number
+  criteria: string | null  // JSON-encoded string[] | null = manual-only
 }
 
 export type DbTrackInsert = Omit<DbTrackRow, 'id'>
@@ -115,6 +133,25 @@ function db(): Database.Database {
         position   INTEGER NOT NULL DEFAULT 0,
         UNIQUE(setlist_id, track_id)
       );
+      CREATE TABLE IF NOT EXISTS bookmarks (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        url        TEXT    NOT NULL,
+        label      TEXT    NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
+      CREATE TABLE IF NOT EXISTS folders (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        name             TEXT    NOT NULL,
+        parent_folder_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
+        created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
+      CREATE TABLE IF NOT EXISTS boards (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL UNIQUE,
+        color      TEXT    NOT NULL DEFAULT '#888888',
+        position   INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
     `)
 
     // Stage 2: ALTER TABLE for existing DBs missing columns
@@ -124,6 +161,42 @@ function db(): Database.Database {
       if (!colNames.has(col)) {
         _db.exec(`ALTER TABLE tracks ADD COLUMN ${col} TEXT`)
       }
+    }
+    if (!colNames.has('folder_id')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL`)
+    }
+    if (!colNames.has('status_is_manual')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN status_is_manual INTEGER NOT NULL DEFAULT 0`)
+    }
+
+    // Stage 2b: boards.criteria column
+    const boardCols = _db.prepare('PRAGMA table_info(boards)').all() as { name: string }[]
+    if (!new Set(boardCols.map((c) => c.name)).has('criteria')) {
+      _db.exec(`ALTER TABLE boards ADD COLUMN criteria TEXT DEFAULT NULL`)
+    }
+
+    // Stage 2.5: seed default boards (runs once, guarded by migration table)
+    const boardsSeeded = !!_db.prepare("SELECT 1 FROM _schema_migrations WHERE name = 'seed_boards_v1'").get()
+    if (!boardsSeeded) {
+      _db.exec(`
+        INSERT OR IGNORE INTO boards (name, color, position) VALUES
+          ('Untagged',    '#888888', 0),
+          ('Tagged',      '#378add', 1),
+          ('Crate ready', '#1d9e75', 2),
+          ('Gig ready',   '#7f77dd', 3);
+        INSERT INTO _schema_migrations VALUES ('seed_boards_v1');
+      `)
+    }
+
+    // Stage 2.6: seed criteria on the three auto-computed default boards
+    const criteriaSeeded = !!_db.prepare("SELECT 1 FROM _schema_migrations WHERE name = 'seed_board_criteria_v1'").get()
+    if (!criteriaSeeded) {
+      _db.exec(`
+        UPDATE boards SET criteria = '[]'                             WHERE name = 'Untagged';
+        UPDATE boards SET criteria = '["bpm","key","genre"]'          WHERE name = 'Tagged';
+        UPDATE boards SET criteria = '["bpm","key","genre","energy"]' WHERE name = 'Crate ready';
+        INSERT INTO _schema_migrations VALUES ('seed_board_criteria_v1');
+      `)
     }
 
     // Stage 3: deduplicate tracks before adding unique index
@@ -156,11 +229,11 @@ export function insertTracks(rows: DbTrackInsert[]): number[] {
   if (!rows.length) return []
   const stmt = db().prepare(`
     INSERT OR IGNORE INTO tracks
-      (title, artist, bpm, key_val, genre, energy, column_name, folder, filepath,
+      (title, artist, bpm, key_val, genre, energy, column_name, folder, folder_id, filepath,
        camelot, openkey, duration_str, duration_sec, file_size_mb, format, album, year,
        remixer, grouping, composer, comment, label, waveform, artwork_path)
     VALUES
-      (@title, @artist, @bpm, @key_val, @genre, @energy, @column_name, @folder, @filepath,
+      (@title, @artist, @bpm, @key_val, @genre, @energy, @column_name, @folder, @folder_id, @filepath,
        @camelot, @openkey, @duration_str, @duration_sec, @file_size_mb, @format, @album, @year,
        @remixer, @grouping, @composer, @comment, @label, @waveform, @artwork_path)
   `)
@@ -195,11 +268,32 @@ export function deleteTracks(ids: number[]): void {
     .run(JSON.stringify(ids))
 }
 
+// Manual move — marks tracks as pinned so auto-compute skips them
 export function moveTracksToColumn(ids: number[], column_name: string): void {
+  if (!ids.length) return
+  db()
+    .prepare(`UPDATE tracks SET column_name = ?, status_is_manual = 1 WHERE id IN (SELECT value FROM json_each(?))`)
+    .run(column_name, JSON.stringify(ids))
+}
+
+// Auto-compute move — does NOT change status_is_manual
+export function autoMoveTracksToColumn(ids: number[], column_name: string): void {
   if (!ids.length) return
   db()
     .prepare(`UPDATE tracks SET column_name = ? WHERE id IN (SELECT value FROM json_each(?))`)
     .run(column_name, JSON.stringify(ids))
+}
+
+// Clear manual pin — lets auto-compute take over again
+export function resetTrackStatusManual(id: number): void {
+  db().prepare(`UPDATE tracks SET status_is_manual = 0 WHERE id = ?`).run(id)
+}
+
+// Update a board's criteria JSON (null = manual-only)
+export function updateBoardCriteria(id: number, criteria: string[] | null): void {
+  db()
+    .prepare(`UPDATE boards SET criteria = ? WHERE id = ?`)
+    .run(criteria === null ? null : JSON.stringify(criteria), id)
 }
 
 // ── Crates ────────────────────────────────────────────────────────────────────
@@ -318,6 +412,139 @@ export function reorderSetlistTracks(setlistId: number, trackIds: number[]): voi
   })()
 }
 
+// ── Bookmarks ─────────────────────────────────────────────────────────────────
+
+export type BookmarkRow = { id: number; url: string; label: string; created_at: number }
+
+export function getBookmarks(): BookmarkRow[] {
+  return db().prepare('SELECT * FROM bookmarks ORDER BY created_at DESC').all() as BookmarkRow[]
+}
+
+export function insertBookmark(url: string, label: string): number {
+  return Number(
+    db().prepare('INSERT INTO bookmarks (url, label) VALUES (?, ?)').run(url, label).lastInsertRowid
+  )
+}
+
+export function deleteBookmark(id: number): void {
+  db().prepare('DELETE FROM bookmarks WHERE id = ?').run(id)
+}
+
+export function updateBookmark(id: number, url: string, label: string): void {
+  db().prepare('UPDATE bookmarks SET url = ?, label = ? WHERE id = ?').run(url, label, id)
+}
+
+// ── Folders ───────────────────────────────────────────────────────────────────
+
+export function getFolders(): FolderRow[] {
+  return db().prepare('SELECT * FROM folders ORDER BY parent_folder_id, name').all() as FolderRow[]
+}
+
+export function insertFolder(name: string, parentId: number | null): number {
+  return Number(
+    db().prepare('INSERT INTO folders (name, parent_folder_id) VALUES (?, ?)').run(name, parentId ?? null).lastInsertRowid
+  )
+}
+
+export function renameFolder(id: number, name: string): void {
+  db().prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id)
+}
+
+export function updateFolderParent(id: number, parentId: number | null): void {
+  db().prepare('UPDATE folders SET parent_folder_id = ? WHERE id = ?').run(parentId ?? null, id)
+}
+
+export function deleteFolder(id: number): void {
+  db().prepare('DELETE FROM folders WHERE id = ?').run(id)
+}
+
+export function updateTrackFolderIds(entries: { trackId: number; folderId: number | null }[]): void {
+  if (!entries.length) return
+  const stmt = db().prepare('UPDATE tracks SET folder_id = ? WHERE id = ?')
+  db().transaction(() => { for (const { trackId, folderId } of entries) stmt.run(folderId ?? null, trackId) })()
+}
+
+// Creates the full folder tree for one import batch.
+// relativeDirs are paths relative to the import root (e.g. "House/Techno").
+// Returns a map from relative path → folder id; "" maps to the root folder id.
+export function ensureFolderTree(rootName: string, relativeDirs: string[]): Record<string, number> {
+  const d = db()
+  const pathToId: Record<string, number> = {}
+
+  const run = d.transaction(() => {
+    const rootId = Number(
+      d.prepare('INSERT INTO folders (name, parent_folder_id) VALUES (?, NULL)').run(rootName).lastInsertRowid
+    )
+    pathToId[''] = rootId
+
+    const allPaths = new Set<string>()
+    for (const dir of relativeDirs) {
+      if (!dir) continue
+      const parts = dir.split('/')
+      for (let i = 1; i <= parts.length; i++) {
+        allPaths.add(parts.slice(0, i).join('/'))
+      }
+    }
+
+    const sorted = [...allPaths].sort((a, b) => a.split('/').length - b.split('/').length)
+    const ins = d.prepare('INSERT INTO folders (name, parent_folder_id) VALUES (?, ?)')
+
+    for (const path of sorted) {
+      const parts = path.split('/')
+      const name = parts[parts.length - 1]
+      const parentPath = parts.slice(0, -1).join('/')
+      const parentId = pathToId[parentPath] ?? rootId
+      pathToId[path] = Number(ins.run(name, parentId).lastInsertRowid)
+    }
+  })
+
+  run()
+  return pathToId
+}
+
+// ── Boards ────────────────────────────────────────────────────────────────────
+
+export function getBoards(): BoardRow[] {
+  return db().prepare('SELECT * FROM boards ORDER BY position, id').all() as BoardRow[]
+}
+
+export function insertBoard(name: string, color: string, position: number): number {
+  return Number(
+    db().prepare('INSERT INTO boards (name, color, position) VALUES (?, ?, ?)').run(name, color, position).lastInsertRowid
+  )
+}
+
+export function renameBoardAndCascade(id: number, oldName: string, newName: string): void {
+  const d = db()
+  d.transaction(() => {
+    d.prepare('UPDATE boards SET name = ? WHERE id = ?').run(newName, id)
+    d.prepare('UPDATE tracks SET column_name = ? WHERE column_name = ?').run(newName, oldName)
+  })()
+}
+
+export function updateBoardColor(id: number, color: string): void {
+  db().prepare('UPDATE boards SET color = ? WHERE id = ?').run(color, id)
+}
+
+export function updateBoardPositions(entries: { id: number; position: number }[]): void {
+  if (!entries.length) return
+  const stmt = db().prepare('UPDATE boards SET position = ? WHERE id = ?')
+  db().transaction(() => { for (const { id, position } of entries) stmt.run(position, id) })()
+}
+
+export function deleteBoardAndCascade(id: number, fallbackName: string): void {
+  const d = db()
+  const board = d.prepare('SELECT name FROM boards WHERE id = ?').get(id) as { name: string } | undefined
+  if (!board) return
+  d.transaction(() => {
+    if (fallbackName) {
+      d.prepare('UPDATE tracks SET column_name = ? WHERE column_name = ?').run(fallbackName, board.name)
+    }
+    d.prepare('DELETE FROM boards WHERE id = ?').run(id)
+  })()
+}
+
+// ── Setlists ──────────────────────────────────────────────────────────────────
 export function getSetlistFilepaths(setlistId: number): string[] {
   return (
     db()

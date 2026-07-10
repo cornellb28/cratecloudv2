@@ -2,11 +2,13 @@ import { useState, useRef } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { countActiveFilters, type AdvancedFilters } from '../utils/searchFilter'
 import { TAG_FIELD_LABELS, type TagField } from '../stores/useTagStore'
+import { BoardSettingsModal } from './board/BoardSettingsModal'
 
 const VIEWS: { label: string; id: string }[] = [
   { label: '≡ List', id: 'List' },
   { label: '⊞ Board', id: 'Board' },
   { label: '⊟ Grid', id: 'Grid' },
+  { label: '⊿ Folders', id: 'Folders' },
 ]
 
 const HINT_LINES = [
@@ -31,6 +33,7 @@ export function Toolbar(): React.JSX.Element {
 
   const [advOpen, setAdvOpen] = useState(false)
   const [hintOpen, setHintOpen] = useState(false)
+  const [boardSettingsOpen, setBoardSettingsOpen] = useState(false)
   const hintRef = useRef<HTMLDivElement>(null)
 
   const adv = advancedFilters
@@ -143,7 +146,17 @@ export function Toolbar(): React.JSX.Element {
             </button>
           ))}
         </div>
+
+        <button
+          className="vbtn"
+          onClick={() => setBoardSettingsOpen(true)}
+          title="Manage boards & auto-assign rules"
+        >
+          ⚙ Boards
+        </button>
       </div>
+
+      {boardSettingsOpen && <BoardSettingsModal onClose={() => setBoardSettingsOpen(false)} />}
 
       {/* ── Advanced filter panel ── */}
       {advOpen && (
