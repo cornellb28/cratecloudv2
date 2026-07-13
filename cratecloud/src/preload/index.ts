@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
+import type { BillingState } from '../main/billing'
 
 const api = {
   // ── Audio analysis ─────────────────────────────────────────────────────
@@ -171,6 +172,30 @@ const api = {
     close: () => ipcRenderer.send('window:close'),
     minimize: () => ipcRenderer.send('window:minimize'),
     maximize: () => ipcRenderer.send('window:maximize'),
+  },
+
+  // ── Billing ──────────────────────────────────────────────────────────────
+  billing: {
+    getState: (): Promise<BillingState> => ipcRenderer.invoke('billing:getState'),
+    startCheckout: (
+      plan: 'pro' | 'corporate',
+      seats: number
+    ): Promise<{ ok: true } | { ok: false; error: string; reason?: 'already-owned' }> =>
+      ipcRenderer.invoke('billing:startCheckout', plan, seats),
+    cancelPendingCheckout: (): Promise<BillingState> =>
+      ipcRenderer.invoke('billing:cancelPendingCheckout'),
+    pollPending: (): Promise<BillingState & { justUnlocked: boolean }> =>
+      ipcRenderer.invoke('billing:pollPending'),
+    activateLicense: (
+      rawKey: string
+    ): Promise<{ ok: true; state: BillingState } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('billing:activateLicense', rawKey),
+    deactivateLicense: (): Promise<BillingState> => ipcRenderer.invoke('billing:deactivateLicense'),
+    onUpdated: (callback: (state: BillingState) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, state: BillingState) => callback(state)
+      ipcRenderer.on('billing:updated', handler)
+      return () => ipcRenderer.removeListener('billing:updated', handler)
+    },
   },
 }
 

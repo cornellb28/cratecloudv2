@@ -10,6 +10,17 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import {
+  getBillingState,
+  startCheckout,
+  cancelPendingCheckout,
+  verifyPendingCheckout,
+  activateLicenseKey,
+  deactivateLicense,
+  parseCheckoutReturnUrl,
+  registerBillingProtocol,
+  type PlanId,
+} from './billing'
+import {
   getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
   autoMoveTracksToColumn, resetTrackStatusManual, updateBoardCriteria,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
@@ -23,6 +34,42 @@ import {
   updateTrackFolderIds, ensureFolderTree,
   getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
 } from './db'
+
+// ── Billing: cratecloud:// deep link (Stripe Checkout return) ────────────────
+// A second app launch via `cratecloud://checkout-return?...` forwards its argv
+// to the primary instance through 'second-instance' — single-instance lock is
+// required for that to work on Windows/Linux. macOS uses 'open-url' instead.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+}
+
+async function handleCheckoutReturn(rawUrl: string): Promise<void> {
+  const parsed = parseCheckoutReturnUrl(rawUrl)
+  if (!parsed) return
+  if (parsed.result === 'cancel') {
+    cancelPendingCheckout()
+  } else if (parsed.sessionId) {
+    await verifyPendingCheckout(parsed.sessionId)
+  }
+  const win = BrowserWindow.getAllWindows()[0]
+  win?.webContents.send('billing:updated', getBillingState())
+}
+
+app.on('second-instance', (_event, argv) => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+  const deepLink = argv.find((a) => a.startsWith('cratecloud://'))
+  if (deepLink) void handleCheckoutReturn(deepLink)
+})
+
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  void handleCheckoutReturn(url)
+})
 
 // ── Serato crate helpers ──────────────────────────────────────────────────────
 
@@ -176,11 +223,33 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return
+
   electronApp.setAppUserModelId('com.cratecloud.app')
+  registerBillingProtocol()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // ── Billing ────────────────────────────────────────────────────────────────
+  ipcMain.handle('billing:getState', async () => {
+    const state = getBillingState()
+    // Re-verify against Stripe on startup rather than trusting whatever was
+    // last written locally, in case the app closed before a webhook/deep-link
+    // resolved a purchase.
+    return state.pendingCheckout ? verifyPendingCheckout() : state
+  })
+  ipcMain.handle('billing:startCheckout', (_e, plan: PlanId, seats: number) =>
+    startCheckout(plan, seats)
+  )
+  ipcMain.handle('billing:cancelPendingCheckout', () => {
+    cancelPendingCheckout()
+    return getBillingState()
+  })
+  ipcMain.handle('billing:activateLicense', (_e, rawKey: string) => activateLicenseKey(rawKey))
+  ipcMain.handle('billing:deactivateLicense', () => deactivateLicense())
+  ipcMain.handle('billing:pollPending', () => verifyPendingCheckout())
 
   // ── Audio file server ─────────────────────────────────────────────────────
   ipcMain.handle('audio:serverPort', () => {

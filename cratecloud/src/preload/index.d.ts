@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
+import type { BillingState } from '../main/billing'
 
 type DbTrackRow = {
   id: number
@@ -78,6 +79,20 @@ declare global {
         close: () => void
         minimize: () => void
         maximize: () => void
+      }
+      billing: {
+        getState: () => Promise<BillingState>
+        startCheckout: (
+          plan: 'pro' | 'corporate',
+          seats: number
+        ) => Promise<{ ok: true } | { ok: false; error: string; reason?: 'already-owned' }>
+        cancelPendingCheckout: () => Promise<BillingState>
+        pollPending: () => Promise<BillingState & { justUnlocked: boolean }>
+        activateLicense: (
+          rawKey: string
+        ) => Promise<{ ok: true; state: BillingState } | { ok: false; error: string }>
+        deactivateLicense: () => Promise<BillingState>
+        onUpdated: (callback: (state: BillingState) => void) => () => void
       }
     }
   }

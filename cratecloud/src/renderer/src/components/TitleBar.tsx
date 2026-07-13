@@ -1,7 +1,7 @@
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { useImport } from '../hooks/useImport'
 
-const TABS = ['Library', 'Artist', 'Setlist', 'AI Match']
+const TABS = ['Library', 'Artist', 'Setlist', 'AI Match', 'Settings']
 
 export function TitleBar(): React.JSX.Element {
   const { activeTab, setActiveTab, importStatus } = useLibraryStore()

@@ -18,6 +18,7 @@ import { SetlistView } from './components/setlist/SetlistView'
 import { ArtistExplorer } from './components/ArtistExplorer'
 import { PlayerBar } from './components/PlayerBar'
 import { FolderHierarchyView } from './components/FolderHierarchyView'
+import { SettingsView } from './components/SettingsView'
 
 function AppInner(): React.JSX.Element {
   const { activeTab, activeView, initFromDb, setAudioPort } = useLibraryStore()
@@ -35,10 +36,10 @@ function AppInner(): React.JSX.Element {
     <div className="app">
       <TitleBar />
       <div className="main">
-        {activeTab !== 'Setlist' && activeTab !== 'Artist' && <Sidebar />}
+        {activeTab !== 'Setlist' && activeTab !== 'Artist' && activeTab !== 'Settings' && <Sidebar />}
 
         <div className="content">
-          {activeTab !== 'Setlist' && activeTab !== 'Artist' && (
+          {activeTab !== 'Setlist' && activeTab !== 'Artist' && activeTab !== 'Settings' && (
             <>
               <Toolbar />
               <BulkBar />
@@ -51,6 +52,7 @@ function AppInner(): React.JSX.Element {
           {activeTab === 'Library' && activeView === 'Folders' && <FolderHierarchyView />}
           {activeTab === 'Artist' && <ArtistExplorer />}
           {activeTab === 'Setlist' && <SetlistView />}
+          {activeTab === 'Settings' && <SettingsView />}
           {activeTab === 'AI Match' && (
             <div className="view-placeholder">
               <div className="view-placeholder-icon">✦</div>
