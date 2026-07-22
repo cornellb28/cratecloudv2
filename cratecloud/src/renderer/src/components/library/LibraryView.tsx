@@ -226,7 +226,7 @@ function ListEditorRow({ track, colSpan, onClose }: {
 export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React.JSX.Element {
   const {
     columns, boards, setActiveTrack, activeTrack, searchQuery, activeFilter, advancedFilters,
-    activeTagFilters, selected, toggleSelect, selectTracks, clearSelection,
+    activeTagFilters, selected, toggleSelect, selectTracks, clearSelection, allTracks,
     crates, activeCrateId, setActiveCrate, activeFolderId, audioPort,
   } = useLibraryStore()
   const { allDescendantIds } = useFolderStore()
@@ -293,6 +293,21 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
     openMenu(e.clientX, e.clientY, track, col)
   }
 
+  // Dragging a selected track drags the whole multi-selection; dragging an
+  // unselected one drags just that track — matches conventional desktop UX.
+  const handleDragStart = (e: React.DragEvent, track: Track) => {
+    e.preventDefault()
+    const paths = selected.has(track.id) && selected.size > 1
+      ? allTracks()
+          .filter((t) => selected.has(t.id))
+          .map((t) => t.filepath)
+          .filter((p): p is string => !!p)
+      : track.filepath
+        ? [track.filepath]
+        : []
+    if (paths.length) window.api.fs.startDrag(paths)
+  }
+
   const artUrl = (t: Track) =>
     t.artwork_path && audioPort ? `http://127.0.0.1:${audioPort}${t.artwork_path}` : null
 
@@ -349,6 +364,8 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                 onClick={() => setModalTrack(track)}
                 onDoubleClick={() => track.filepath && playTrack(track)}
                 onContextMenu={(e) => handleContextMenu(e, track, board?.name ?? '')}
+                draggable={!!track.filepath}
+                onDragStart={(e) => handleDragStart(e, track)}
               >
                 <div className="lib-grid-art">
                   {art
@@ -490,6 +507,8 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                       }}
                       onDoubleClick={() => track.filepath && playTrack(track)}
                       onContextMenu={(e) => handleContextMenu(e, track, name)}
+                      draggable={!!track.filepath}
+                      onDragStart={(e) => handleDragStart(e, track)}
                     >
                       <td
                         className="lib-td lib-td-check"

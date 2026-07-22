@@ -53,6 +53,20 @@ const api = {
       ipcRenderer.invoke('fs:trashFile', filepath),
     classifyDropped: (paths: string[]): Promise<{ files: string[]; folders: string[] }> =>
       ipcRenderer.invoke('fs:classifyDropped', paths),
+    showInFolder: (filepath: string): Promise<void> =>
+      ipcRenderer.invoke('fs:showInFolder', filepath),
+    startDrag: (paths: string[]): void => ipcRenderer.send('fs:startDrag', paths),
+  },
+
+  // ── Platform (for "Finder" vs "Explorer" labeling, etc.) ────────────────
+  platform: process.platform,
+
+  // ── Duplicate detection ─────────────────────────────────────────────────
+  dupes: {
+    getDismissed: (): Promise<{ track_id_a: number; track_id_b: number; dismissed_at: number }[]> =>
+      ipcRenderer.invoke('dupes:getDismissed'),
+    dismiss: (idA: number, idB: number): Promise<void> =>
+      ipcRenderer.invoke('dupes:dismiss', idA, idB),
   },
 
   // ── Audio server ────────────────────────────────────────────────────────────

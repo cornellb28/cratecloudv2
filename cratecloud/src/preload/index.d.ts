@@ -74,6 +74,13 @@ declare global {
         moveFile: (fromPath: string, toFolder: string) => Promise<string>
         trashFile: (filepath: string) => Promise<void>
         classifyDropped: (paths: string[]) => Promise<{ files: string[]; folders: string[] }>
+        showInFolder: (filepath: string) => Promise<void>
+        startDrag: (paths: string[]) => void
+      }
+      platform: NodeJS.Platform
+      dupes: {
+        getDismissed: () => Promise<{ track_id_a: number; track_id_b: number; dismissed_at: number }[]>
+        dismiss: (idA: number, idB: number) => Promise<void>
       }
       window: {
         close: () => void

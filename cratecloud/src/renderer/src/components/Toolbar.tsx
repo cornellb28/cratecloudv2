@@ -3,6 +3,7 @@ import { useLibraryStore } from '../stores/useLibraryStore'
 import { countActiveFilters, type AdvancedFilters } from '../utils/searchFilter'
 import { TAG_FIELD_LABELS, type TagField } from '../stores/useTagStore'
 import { BoardSettingsModal } from './board/BoardSettingsModal'
+import { DuplicatesModal } from './DuplicatesModal'
 
 const VIEWS: { label: string; id: string }[] = [
   { label: '≡ List', id: 'List' },
@@ -34,6 +35,7 @@ export function Toolbar(): React.JSX.Element {
   const [advOpen, setAdvOpen] = useState(false)
   const [hintOpen, setHintOpen] = useState(false)
   const [boardSettingsOpen, setBoardSettingsOpen] = useState(false)
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false)
   const hintRef = useRef<HTMLDivElement>(null)
 
   const adv = advancedFilters
@@ -154,9 +156,18 @@ export function Toolbar(): React.JSX.Element {
         >
           ⚙ Boards
         </button>
+
+        <button
+          className="vbtn"
+          onClick={() => setDuplicatesOpen(true)}
+          title="Scan for possible duplicate tracks"
+        >
+          ⧉ Duplicates
+        </button>
       </div>
 
       {boardSettingsOpen && <BoardSettingsModal onClose={() => setBoardSettingsOpen(false)} />}
+      {duplicatesOpen && <DuplicatesModal onClose={() => setDuplicatesOpen(false)} />}
 
       {/* ── Advanced filter panel ── */}
       {advOpen && (

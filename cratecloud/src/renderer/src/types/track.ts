@@ -25,6 +25,7 @@ export type Track = {
   comment?: string
   label?: string
   artwork_path?: string
+  created_at?: number | null
 }
 
 export type Crate = {

@@ -30,6 +30,13 @@ export type DbTrackRow = {
   label: string | null
   waveform: string | null
   artwork_path: string | null
+  created_at: number | null
+}
+
+export type DismissedDuplicatePair = {
+  track_id_a: number
+  track_id_b: number
+  dismissed_at: number
 }
 
 export type FolderRow = {
@@ -48,7 +55,8 @@ export type BoardRow = {
   criteria: string | null  // JSON-encoded string[] | null = manual-only
 }
 
-export type DbTrackInsert = Omit<DbTrackRow, 'id'>
+// created_at is set server-side (strftime('%s','now')) at insert time — callers never supply it
+export type DbTrackInsert = Omit<DbTrackRow, 'id' | 'created_at'>
 
 export type CrateRow = {
   id: number
@@ -99,7 +107,8 @@ function db(): Database.Database {
         comment      TEXT,
         label        TEXT,
         waveform     TEXT,
-        artwork_path TEXT
+        artwork_path TEXT,
+        created_at   INTEGER
       );
       CREATE TABLE IF NOT EXISTS _schema_migrations (name TEXT PRIMARY KEY);
       INSERT OR IGNORE INTO _schema_migrations VALUES ('add_extended_fields_v2');
@@ -156,6 +165,12 @@ function db(): Database.Database {
         key   TEXT PRIMARY KEY,
         value TEXT
       );
+      CREATE TABLE IF NOT EXISTS dismissed_duplicate_pairs (
+        track_id_a   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        track_id_b   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        dismissed_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        PRIMARY KEY (track_id_a, track_id_b)
+      );
     `)
 
     // Stage 2: ALTER TABLE for existing DBs missing columns
@@ -171,6 +186,10 @@ function db(): Database.Database {
     }
     if (!colNames.has('status_is_manual')) {
       _db.exec(`ALTER TABLE tracks ADD COLUMN status_is_manual INTEGER NOT NULL DEFAULT 0`)
+    }
+    if (!colNames.has('created_at')) {
+      // Nullable — existing rows have no known "date added", new inserts set it explicitly
+      _db.exec(`ALTER TABLE tracks ADD COLUMN created_at INTEGER`)
     }
 
     // Stage 2b: boards.criteria column
@@ -235,11 +254,11 @@ export function insertTracks(rows: DbTrackInsert[]): number[] {
     INSERT OR IGNORE INTO tracks
       (title, artist, bpm, key_val, genre, energy, column_name, folder, folder_id, filepath,
        camelot, openkey, duration_str, duration_sec, file_size_mb, format, album, year,
-       remixer, grouping, composer, comment, label, waveform, artwork_path)
+       remixer, grouping, composer, comment, label, waveform, artwork_path, created_at)
     VALUES
       (@title, @artist, @bpm, @key_val, @genre, @energy, @column_name, @folder, @folder_id, @filepath,
        @camelot, @openkey, @duration_str, @duration_sec, @file_size_mb, @format, @album, @year,
-       @remixer, @grouping, @composer, @comment, @label, @waveform, @artwork_path)
+       @remixer, @grouping, @composer, @comment, @label, @waveform, @artwork_path, strftime('%s','now'))
   `)
   const insertAll = db().transaction((rows: DbTrackInsert[]) =>
     rows.map((row) => Number(stmt.run(row).lastInsertRowid))
@@ -578,4 +597,20 @@ export function getSetlistFilepaths(setlistId: number): string[] {
       )
       .all(setlistId) as { filepath: string }[]
   ).map((r) => r.filepath)
+}
+
+// ── Duplicate detection ─────────────────────────────────────────────────────
+export function getDismissedDuplicatePairs(): DismissedDuplicatePair[] {
+  return db()
+    .prepare('SELECT track_id_a, track_id_b, dismissed_at FROM dismissed_duplicate_pairs')
+    .all() as DismissedDuplicatePair[]
+}
+
+// Pair is always stored with the smaller id first so (A,B) and (B,A) collide on the same row
+export function addDismissedDuplicatePair(idA: number, idB: number): void {
+  const a = Math.min(idA, idB)
+  const b = Math.max(idA, idB)
+  db()
+    .prepare('INSERT OR IGNORE INTO dismissed_duplicate_pairs (track_id_a, track_id_b) VALUES (?, ?)')
+    .run(a, b)
 }

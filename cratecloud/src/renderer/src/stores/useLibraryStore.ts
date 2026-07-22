@@ -15,6 +15,7 @@ type DbTrackRow = {
   comment: string | null; label: string | null
   waveform: string | null
   artwork_path: string | null
+  created_at: number | null
 }
 
 // ── computeStatus ─────────────────────────────────────────────────────────────
@@ -101,6 +102,7 @@ function rowToTrack(row: DbTrackRow): Track {
     comment: row.comment ?? undefined,
     label: row.label ?? undefined,
     artwork_path: row.artwork_path ?? undefined,
+    created_at: row.created_at,
   }
 }
 
@@ -435,6 +437,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         comment: row.comment ?? undefined,
         label: row.label ?? undefined,
         artwork_path: row.artwork_path ?? undefined,
+        // Optimistic local value — the real strftime('%s','now') is set server-side
+        // at insert time; this is a same-second approximation for immediate UI display.
+        created_at: Math.floor(Date.now() / 1000),
       }
       const dest = row.column_name
       if (!buckets[dest]) buckets[dest] = []

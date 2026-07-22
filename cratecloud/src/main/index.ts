@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
 import { join, extname, basename, relative } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
@@ -33,6 +33,7 @@ import {
   getFolders, insertFolder, renameFolder, updateFolderParent, deleteFolder,
   updateTrackFolderIds, ensureFolderTree,
   getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
+  getDismissedDuplicatePairs, addDismissedDuplicatePair,
 } from './db'
 
 // ── Billing: cratecloud:// deep link (Stripe Checkout return) ────────────────
@@ -388,6 +389,24 @@ app.whenReady().then(() => {
     await shell.trashItem(filepath)
   })
 
+  // ── Finder/Explorer integration ─────────────────────────────────────────────
+  ipcMain.handle('fs:showInFolder', (_event, filepath: string) => {
+    shell.showItemInFolder(filepath)
+  })
+
+  // icon is required (non-empty) by startDrag on macOS; the app icon doubles
+  // as a generic drag cursor rather than a per-file thumbnail.
+  const dragIcon = nativeImage.createFromPath(icon)
+
+  ipcMain.on('fs:startDrag', (event, paths: string[]) => {
+    if (!paths.length) return
+    event.sender.startDrag({
+      file: paths[0],
+      files: paths,
+      icon: dragIcon,
+    })
+  })
+
   ipcMain.handle('fs:classifyDropped', async (_event, paths: string[]) => {
     const files: string[] = []
     const folders: string[] = []
@@ -509,6 +528,12 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('db:resetTrackStatus', (_e, id: number) =>
     resetTrackStatusManual(id)
+  )
+
+  // ── Duplicate detection ──────────────────────────────────────────────────────
+  ipcMain.handle('dupes:getDismissed', () => getDismissedDuplicatePairs())
+  ipcMain.handle('dupes:dismiss', (_e, idA: number, idB: number) =>
+    addDismissedDuplicatePair(idA, idB)
   )
 
   // ── Folders ────────────────────────────────────────────────────────────────

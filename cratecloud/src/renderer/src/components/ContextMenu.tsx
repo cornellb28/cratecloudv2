@@ -119,6 +119,12 @@ export function ContextMenu(): React.JSX.Element | null {
       {track.filepath && (
         <>
           <div className="ctx-sep" />
+          <div
+            className="ctx-item"
+            onClick={act(() => window.api.fs.showInFolder(track.filepath!))}
+          >
+            {window.api.platform === 'win32' ? 'Show in Explorer' : 'Show in Finder'}
+          </div>
           <div className="ctx-item" onClick={handleMoveFile}>
             Move file to folder…
           </div>

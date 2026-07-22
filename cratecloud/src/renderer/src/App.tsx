@@ -19,6 +19,9 @@ import { ArtistExplorer } from './components/ArtistExplorer'
 import { PlayerBar } from './components/PlayerBar'
 import { FolderHierarchyView } from './components/FolderHierarchyView'
 import { SettingsView } from './components/SettingsView'
+import { TrackMatchView } from './components/TrackMatchView'
+
+const NO_SIDEBAR_TABS = ['Setlist', 'Artist', 'Settings', 'Track Match']
 
 function AppInner(): React.JSX.Element {
   const { activeTab, activeView, initFromDb, setAudioPort } = useLibraryStore()
@@ -36,10 +39,10 @@ function AppInner(): React.JSX.Element {
     <div className="app">
       <TitleBar />
       <div className="main">
-        {activeTab !== 'Setlist' && activeTab !== 'Artist' && activeTab !== 'Settings' && <Sidebar />}
+        {!NO_SIDEBAR_TABS.includes(activeTab) && <Sidebar />}
 
         <div className="content">
-          {activeTab !== 'Setlist' && activeTab !== 'Artist' && activeTab !== 'Settings' && (
+          {!NO_SIDEBAR_TABS.includes(activeTab) && (
             <>
               <Toolbar />
               <BulkBar />
@@ -53,13 +56,7 @@ function AppInner(): React.JSX.Element {
           {activeTab === 'Artist' && <ArtistExplorer />}
           {activeTab === 'Setlist' && <SetlistView />}
           {activeTab === 'Settings' && <SettingsView />}
-          {activeTab === 'AI Match' && (
-            <div className="view-placeholder">
-              <div className="view-placeholder-icon">✦</div>
-              <div className="view-placeholder-title">AI Match</div>
-              <div className="view-placeholder-sub">Harmonic matching and recommendations coming soon.</div>
-            </div>
-          )}
+          {activeTab === 'Track Match' && <TrackMatchView />}
         </div>
       </div>
 
