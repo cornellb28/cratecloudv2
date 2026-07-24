@@ -4,6 +4,8 @@ import { countActiveFilters, type AdvancedFilters } from '../utils/searchFilter'
 import { TAG_FIELD_LABELS, type TagField } from '../stores/useTagStore'
 import { BoardSettingsModal } from './board/BoardSettingsModal'
 import { DuplicatesModal } from './DuplicatesModal'
+import { LockBadge } from './LockBadge'
+import { usePlanLimits } from '../hooks/usePlanLimits'
 
 const VIEWS: { label: string; id: string }[] = [
   { label: '≡ List', id: 'List' },
@@ -31,6 +33,7 @@ export function Toolbar(): React.JSX.Element {
     activeTagFilters, toggleTagFilter, clearTagFilters,
     activeView, setActiveView,
   } = useLibraryStore()
+  const { isLocked } = usePlanLimits()
 
   const [advOpen, setAdvOpen] = useState(false)
   const [hintOpen, setHintOpen] = useState(false)
@@ -157,13 +160,15 @@ export function Toolbar(): React.JSX.Element {
           ⚙ Boards
         </button>
 
-        <button
-          className="vbtn"
-          onClick={() => setDuplicatesOpen(true)}
-          title="Scan for possible duplicate tracks"
-        >
-          ⧉ Duplicates
-        </button>
+        <LockBadge locked={isLocked('duplicateDetection')} featureName="Duplicate Detection">
+          <button
+            className="vbtn"
+            onClick={() => setDuplicatesOpen(true)}
+            title="Scan for possible duplicate tracks"
+          >
+            ⧉ Duplicates
+          </button>
+        </LockBadge>
       </div>
 
       {boardSettingsOpen && <BoardSettingsModal onClose={() => setBoardSettingsOpen(false)} />}

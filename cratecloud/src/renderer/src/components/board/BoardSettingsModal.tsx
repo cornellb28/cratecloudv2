@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import type { Board, Track } from '../../types/track'
+import { LockBadge } from '../LockBadge'
+import { usePlanLimits } from '../../hooks/usePlanLimits'
 
 const BOARD_COLORS = ['#7f77dd', '#378add', '#1d9e75', '#d85a30', '#d4537e', '#ba7517', '#3d9e9e', '#888888']
 
@@ -202,6 +204,7 @@ export function BoardSettingsModal({ onClose }: Props): React.JSX.Element {
   const {
     boards, columns, reorderBoards, createBoard, recomputeAllAutoStatuses,
   } = useLibraryStore()
+  const { boardLimit } = usePlanLimits()
 
   const [recomputing, setRecomputing] = useState(false)
   const [addingBoard, setAddingBoard] = useState(false)
@@ -301,7 +304,9 @@ export function BoardSettingsModal({ onClose }: Props): React.JSX.Element {
               </div>
             </div>
           ) : (
-            <button className="bsm-add-btn" onClick={() => setAddingBoard(true)}>+ Add Board</button>
+            <LockBadge locked={boards.length >= boardLimit} featureName="Unlimited Boards">
+              <button className="bsm-add-btn" onClick={() => setAddingBoard(true)}>+ Add Board</button>
+            </LockBadge>
           )}
         </div>
       </div>

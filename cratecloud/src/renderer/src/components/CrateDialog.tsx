@@ -3,7 +3,8 @@ import { useLibraryStore } from '../stores/useLibraryStore'
 import { CRATE_COLORS } from '../types/track'
 
 export function CrateDialog(): React.JSX.Element | null {
-  const { crateDialog, closeCrateDialog, createCrate, updateCrate, deleteCrate } = useLibraryStore()
+  const { crateDialog, closeCrateDialog, createCrate, updateCrate, deleteCrate, addTracksToCrate } =
+    useLibraryStore()
 
   const [name, setName] = useState('')
   const [color, setColor] = useState(CRATE_COLORS[0])
@@ -31,7 +32,9 @@ export function CrateDialog(): React.JSX.Element | null {
     if (isEdit) {
       await updateCrate(crateDialog.crate.id, name.trim(), color)
     } else {
-      await createCrate(name.trim(), color)
+      const id = await createCrate(name.trim(), color)
+      const pending = crateDialog.pendingTrackIds
+      if (pending?.length) await addTracksToCrate(id, pending)
     }
     setSaving(false)
     closeCrateDialog()

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useBillingStore, type PlanId } from '../stores/useBillingStore'
 
 const PLAN_COPY: Record<PlanId, { title: string; price: string; blurb: string }> = {
@@ -49,16 +49,24 @@ function PlanButton({
 export function SettingsView(): React.JSX.Element {
   const {
     plan, seats, pendingCheckout, activatedAt, licenseKeyMasked,
-    loading, error, activationError,
+    loading, error, activationError, highlightPlanCard,
     init, selectPlan, cancelPendingCheckout, checkPendingNow, dismissError,
-    activateLicense, deactivateLicense, dismissActivationError,
+    activateLicense, deactivateLicense, dismissActivationError, setHighlightPlanCard,
   } = useBillingStore()
   const [corporateSeats, setCorporateSeats] = useState(5)
   const [licenseInput, setLicenseInput] = useState('')
+  const proCardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     init()
   }, [])
+
+  useEffect(() => {
+    if (highlightPlanCard !== 'pro') return
+    proCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const timer = setTimeout(() => setHighlightPlanCard(null), 1800)
+    return () => clearTimeout(timer)
+  }, [highlightPlanCard, setHighlightPlanCard])
 
   return (
     <div className="settings-view">
@@ -106,7 +114,10 @@ export function SettingsView(): React.JSX.Element {
           </button>
         </div>
 
-        <div className="settings-plan-card">
+        <div
+          ref={proCardRef}
+          className={`settings-plan-card${highlightPlanCard === 'pro' ? ' highlight' : ''}`}
+        >
           <div className="settings-plan-title">{PLAN_COPY.pro.title}</div>
           <div className="settings-plan-price">{PLAN_COPY.pro.price}</div>
           <p className="settings-plan-blurb">{PLAN_COPY.pro.blurb}</p>

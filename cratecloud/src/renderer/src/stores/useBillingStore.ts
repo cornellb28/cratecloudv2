@@ -19,6 +19,8 @@ type BillingStore = BillingState & {
   loading: boolean
   error: CheckoutError | null
   activationError: string | null
+  highlightPlanCard: PlanId | null
+  setHighlightPlanCard: (plan: PlanId | null) => void
   init: () => Promise<void>
   selectPlan: (plan: PlanId, seats: number) => Promise<void>
   cancelPendingCheckout: () => Promise<void>
@@ -41,6 +43,8 @@ export const useBillingStore = create<BillingStore>((set) => {
     loading: false,
     error: null,
     activationError: null,
+    highlightPlanCard: null,
+    setHighlightPlanCard: (plan) => set({ highlightPlanCard: plan }),
 
     init: async () => {
       set({ loading: true })

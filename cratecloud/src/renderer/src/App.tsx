@@ -20,6 +20,8 @@ import { PlayerBar } from './components/PlayerBar'
 import { FolderHierarchyView } from './components/FolderHierarchyView'
 import { SettingsView } from './components/SettingsView'
 import { TrackMatchView } from './components/TrackMatchView'
+import { LockedView } from './components/LockedView'
+import { usePlanLimits } from './hooks/usePlanLimits'
 
 const NO_SIDEBAR_TABS = ['Setlist', 'Artist', 'Settings', 'Track Match']
 
@@ -27,6 +29,7 @@ function AppInner(): React.JSX.Element {
   const { activeTab, activeView, initFromDb, setAudioPort } = useLibraryStore()
   const { init: initTags } = useTagStore()
   const { init: initFolders } = useFolderStore()
+  const { isLocked } = usePlanLimits()
 
   useEffect(() => {
     initFromDb()
@@ -56,7 +59,15 @@ function AppInner(): React.JSX.Element {
           {activeTab === 'Artist' && <ArtistExplorer />}
           {activeTab === 'Setlist' && <SetlistView />}
           {activeTab === 'Settings' && <SettingsView />}
-          {activeTab === 'Track Match' && <TrackMatchView />}
+          {activeTab === 'Track Match' &&
+            (isLocked('trackMatch') ? (
+              <LockedView
+                featureName="Track Match"
+                description="Harmonic, BPM, and energy compatibility scoring across your library."
+              />
+            ) : (
+              <TrackMatchView />
+            ))}
         </div>
       </div>
 

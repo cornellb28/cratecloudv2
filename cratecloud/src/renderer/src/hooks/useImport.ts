@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { useFolderStore } from '../stores/useFolderStore'
+import { usePlanLimits } from './usePlanLimits'
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.flac', '.wav', '.aiff', '.aif', '.m4a', '.ogg'])
 
@@ -12,6 +13,7 @@ function getExt(path: string): string {
 export function useImport() {
   const { addTracks, setImportStatus, allTracks } = useLibraryStore()
   const { init: reinitFolders } = useFolderStore()
+  const { trackLimit } = usePlanLimits()
   const busyRef = useRef(false)
 
   const importPaths = useCallback(
@@ -31,10 +33,14 @@ export function useImport() {
         )
 
         let skipped = 0
+        let capSkipped = 0
+        let capSkippedFolders = 0
+        let remaining = Math.max(0, trackLimit - allTracks().length)
 
         const audioFiles = files.filter((p) => AUDIO_EXTENSIONS.has(getExt(p)))
 
         for (const folderPath of folders) {
+          if (remaining <= 0) { capSkippedFolders++; continue }
           const rootName = folderPath.split('/').pop() ?? folderPath
           const removeListener = window.api.onAnalyzeProgress((p) => {
             setImportStatus({ current: p.current, total: p.total, label: p.file })
@@ -43,12 +49,15 @@ export function useImport() {
             const results = await window.api.analyzeFolder(folderPath)
             const fresh = results.filter((r) => !r.filepath || !knownPaths.has(r.filepath))
             skipped += results.length - fresh.length
-            if (fresh.length) {
+            const allowed = fresh.slice(0, remaining)
+            capSkipped += fresh.length - allowed.length
+            remaining -= allowed.length
+            if (allowed.length) {
               // Build folder tree in DB and map each result to its folder_id
-              const relativeDirs = [...new Set(fresh.map((r) => r.relative_dir ?? ''))]
+              const relativeDirs = [...new Set(allowed.map((r) => r.relative_dir ?? ''))]
               const folderIdMap = await window.api.folders.ensureTree(rootName, relativeDirs)
               await reinitFolders()
-              const withFolderIds = fresh.map((r) => ({
+              const withFolderIds = allowed.map((r) => ({
                 ...r,
                 folder_id: folderIdMap[r.relative_dir ?? ''] ?? null,
               }))
@@ -60,8 +69,11 @@ export function useImport() {
         }
 
         // Filter individual files before analyzing — avoids running Python on known paths
-        const newAudioFiles = audioFiles.filter((p) => !knownPaths.has(p))
-        skipped += audioFiles.length - newAudioFiles.length
+        const dedupedFiles = audioFiles.filter((p) => !knownPaths.has(p))
+        skipped += audioFiles.length - dedupedFiles.length
+        const newAudioFiles = dedupedFiles.slice(0, remaining)
+        capSkipped += dedupedFiles.length - newAudioFiles.length
+        remaining -= newAudioFiles.length
 
         if (newAudioFiles.length > 0) {
           const total = newAudioFiles.length
@@ -91,12 +103,25 @@ export function useImport() {
           })
           await new Promise((r) => setTimeout(r, 2000))
         }
+
+        if (capSkipped > 0 || capSkippedFolders > 0) {
+          const parts = [
+            capSkipped > 0 ? `${capSkipped} track${capSkipped > 1 ? 's' : ''}` : null,
+            capSkippedFolders > 0 ? `${capSkippedFolders} folder${capSkippedFolders > 1 ? 's' : ''}` : null,
+          ].filter(Boolean).join(' and ')
+          setImportStatus({
+            current: 0,
+            total: 0,
+            label: `Free plan limit reached (${trackLimit} tracks) — ${parts} not imported. Upgrade to Pro for unlimited tracks.`,
+          })
+          await new Promise((r) => setTimeout(r, 3000))
+        }
       } finally {
         setImportStatus(null)
         busyRef.current = false
       }
     },
-    [addTracks, setImportStatus, allTracks, reinitFolders],
+    [addTracks, setImportStatus, allTracks, reinitFolders, trackLimit],
   )
 
   const importFromDialog = useCallback(

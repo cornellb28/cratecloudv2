@@ -787,6 +787,15 @@
 .bem-btn.primary { background: #7f77dd; border-color: #7f77dd; color: #fff; }
 .bem-btn.primary:hover { background: #9b8ed4; }
 
+/* ── Locked-feature gating (LockBadge / LockedView) ──────────────────── */
+.lock-badge-wrap { position: relative; display: inline-flex; cursor: pointer; }
+.lock-badge-wrap > button, .lock-badge-wrap > * { opacity: 0.55; pointer-events: none; }
+.lock-badge-icon { position: absolute; top: -4px; right: -4px; font-size: 10px; line-height: 1; background: #16161e; border: 1px solid #2a2a3a; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.lock-badge-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; background: #16161e; border: 1px solid #2a2a3a; border-radius: 8px; padding: 12px; width: 200px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); cursor: default; }
+.lock-badge-popover-title { font-size: 12px; color: #e8e8f0; line-height: 1.4; }
+.lock-badge-popover-actions { display: flex; gap: 8px; }
+.lock-badge-popover-actions .bem-btn { flex: 1; padding: 6px 8px; }
+
 /* ── Setlist view ─────────────────────────────────────────────────────── */
 .setlist-container { display: flex; flex: 1; overflow: hidden; }
 
@@ -1099,7 +1108,8 @@
 .settings-link-btn.danger { color: #d85a30; }
 
 .settings-plans { display: flex; gap: 16px; flex-wrap: wrap; }
-.settings-plan-card { background: #16161e; border: 1px solid #1e1e2a; border-radius: 10px; padding: 18px; width: 220px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.settings-plan-card { background: #16161e; border: 1px solid #1e1e2a; border-radius: 10px; padding: 18px; width: 220px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; transition: border-color .3s, box-shadow .3s; }
+.settings-plan-card.highlight { border-color: #7f77dd; box-shadow: 0 0 0 3px rgba(127, 119, 221, 0.25); }
 .settings-plan-title { font-size: 14px; font-weight: 600; color: #e8e8f0; }
 .settings-plan-price { font-size: 20px; font-weight: 700; color: #a09be8; }
 .settings-plan-blurb { font-size: 12px; color: #888; line-height: 1.5; margin: 0; flex: 1; }
@@ -1171,3 +1181,6 @@
 .tm-score-low { background: #2a1a1a; color: #b0645a; }
 
 .tm-excluded-note { margin-top: 14px; font-size: 11px; color: #444; font-style: italic; }
+
+.tm-source-check { display: flex; align-items: center; padding-top: 2px; }
+.tm-selection-bar { position: sticky; bottom: 0; margin-top: 14px; border-radius: 8px; border-bottom: none; box-shadow: 0 -4px 16px rgba(0,0,0,.35); }

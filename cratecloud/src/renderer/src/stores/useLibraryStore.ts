@@ -129,7 +129,10 @@ type LibraryState = {
   activeCrateId: number | null
   activeFolderId: number | null
   boards: Board[]
-  crateDialog: { mode: 'create' } | { mode: 'edit'; crate: Crate } | null
+  crateDialog:
+    | { mode: 'create'; pendingTrackIds?: number[] }
+    | { mode: 'edit'; crate: Crate }
+    | null
 
   initFromDb: () => Promise<void>
   setActiveTab: (tab: string) => void
@@ -170,10 +173,10 @@ type LibraryState = {
   deleteBoard: (id: number, fallbackName: string) => Promise<void>
   resetTrackStatus: (trackId: number) => Promise<void>
   recomputeAllAutoStatuses: () => Promise<void>
-  openCrateDialog: (mode: 'create') => void
+  openCrateDialog: (mode: 'create', pendingTrackIds?: number[]) => void
   openCrateEditDialog: (crate: Crate) => void
   closeCrateDialog: () => void
-  createCrate: (name: string, color: string) => Promise<void>
+  createCrate: (name: string, color: string) => Promise<number>
   updateCrate: (id: number, name: string, color: string) => Promise<void>
   deleteCrate: (id: number) => Promise<void>
   addTracksToCrate: (crateId: number, trackIds: number[]) => Promise<void>
@@ -624,13 +627,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({ columns: newColumns })
   },
 
-  openCrateDialog: (mode) => set({ crateDialog: { mode } }),
+  openCrateDialog: (mode, pendingTrackIds) => set({ crateDialog: { mode, pendingTrackIds } }),
   openCrateEditDialog: (crate) => set({ crateDialog: { mode: 'edit', crate } }),
   closeCrateDialog: () => set({ crateDialog: null }),
 
   createCrate: async (name, color) => {
     const id = await window.api.crate.insert(name, color)
     set((s) => ({ crates: [...s.crates, { id, name, color, trackIds: new Set() }] }))
+    return id
   },
 
   updateCrate: async (id, name, color) => {

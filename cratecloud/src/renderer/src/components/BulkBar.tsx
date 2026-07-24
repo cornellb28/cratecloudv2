@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { BulkEditModal } from './BulkEditModal'
 import { MoveProgressModal, type MoveResult } from './MoveProgressModal'
+import { LockBadge } from './LockBadge'
+import { usePlanLimits } from '../hooks/usePlanLimits'
 
 export function BulkBar(): React.JSX.Element | null {
   const { selected, clearSelection, bulkMove, allTracks, openDeleteDialog, updateTrack, boards } =
     useLibraryStore()
+  const { isLocked } = usePlanLimits()
   const [editOpen, setEditOpen] = useState(false)
   const [moveResults, setMoveResults] = useState<MoveResult[] | null>(null)
   const [moving, setMoving] = useState(false)
@@ -38,7 +41,9 @@ export function BulkBar(): React.JSX.Element | null {
     <>
       <div className="bulk-bar">
         <span>{n} track{n !== 1 ? 's' : ''} selected</span>
-        <button className="bulk-btn accent" onClick={() => setEditOpen(true)}>✎ Edit</button>
+        <LockBadge locked={isLocked('bulkEdit')} featureName="Bulk Edit">
+          <button className="bulk-btn accent" onClick={() => setEditOpen(true)}>✎ Edit</button>
+        </LockBadge>
         {boards.map((b) => (
           <button key={b.id} className="bulk-btn" onClick={() => bulkMove(b.name)}>
             <span className="bulk-board-dot" style={{ background: b.color }} />

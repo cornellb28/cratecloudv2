@@ -9,6 +9,8 @@ import { useFolderStore } from '../../stores/useFolderStore'
 import { BoardColumn } from './BoardColumn'
 import type { Board, Track } from '../../types/track'
 import { matchesTrack, matchesTagFilters } from '../../utils/searchFilter'
+import { LockBadge } from '../LockBadge'
+import { usePlanLimits } from '../../hooks/usePlanLimits'
 
 const BOARD_COLORS = ['#7f77dd', '#378add', '#1d9e75', '#d85a30', '#d4537e', '#ba7517', '#3d9e9e', '#888888']
 
@@ -21,6 +23,7 @@ export function BoardView(): React.JSX.Element {
     activeCrateId, crates, activeFolderId,
   } = useLibraryStore()
   const { allDescendantIds } = useFolderStore()
+  const { boardLimit } = usePlanLimits()
 
   const [boardSearch, setBoardSearch] = useState('')
   const [addingBoard, setAddingBoard] = useState(false)
@@ -174,9 +177,11 @@ export function BoardView(): React.JSX.Element {
                     </div>
                   </div>
                 ) : (
-                  <button className="col-new-btn" onClick={() => setAddingBoard(true)}>
-                    + New Board
-                  </button>
+                  <LockBadge locked={boards.length >= boardLimit} featureName="Unlimited Boards">
+                    <button className="col-new-btn" onClick={() => setAddingBoard(true)}>
+                      + New Board
+                    </button>
+                  </LockBadge>
                 )}
               </div>
             )}
