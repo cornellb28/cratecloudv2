@@ -5,3 +5,9 @@ scipy>=1.11.0
 soundfile>=0.12.0
 scikit-learn>=1.3.0
 pyinstaller>=6.0.0
+# Pinned: numba is a transitive dep of librosa (JIT-compiles beat_track).
+# Unpinned, pip resolved 0.65.1 on arm64 macOS, which segfaults inside
+# numba's gufunc dispatch during librosa.beat.beat_track on real audio —
+# every analysis silently died with "Python exited with code null" and no
+# tracks were ever imported. 0.61.2 is verified working on this platform.
+numba==0.61.2
