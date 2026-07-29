@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { app } from 'electron'
 
 export type DbTrackRow = {
@@ -31,6 +31,21 @@ export type DbTrackRow = {
   waveform: string | null
   artwork_path: string | null
   created_at: number | null
+  updated_at: number | null
+  // Real on-disk modification time (epoch seconds) — distinct from
+  // created_at/updated_at, which are CrateCloud's own bookkeeping. Lets a
+  // future pass ask "has this file changed since we last analyzed it" without
+  // re-reading/re-hashing every file.
+  last_modified: number | null
+  filename: string | null
+  client_uuid: string | null
+  // Cheap fingerprint (sha256 of a 64KB slice ~40% into the file, skipping
+  // metadata containers at the head/tail) — captured once at import time so
+  // it survives after the file itself goes missing. Null for tracks imported
+  // before this column existed; those just can't use the hash tie-break.
+  partial_hash: string | null
+  // Set when a rescan can't find the file at its stored path; cleared on relink.
+  missing_since: number | null
 }
 
 export type DismissedDuplicatePair = {
@@ -44,6 +59,29 @@ export type FolderRow = {
   name: string
   parent_folder_id: number | null
   created_at: number
+  updated_at: number | null
+  // Absolute on-disk directory this folder corresponds to. Only ever set at
+  // import time, when the real root path is known — never inferred from a
+  // child track's filepath (folder_id can be logically reassigned without
+  // moving the file, so that would be a guess, not a fact). NULL for
+  // manually-created folders and for folders imported before this column
+  // existed; such folders can't be a drag-move destination.
+  path: string | null
+  // Which registered library_roots row this folder's tree belongs to, if
+  // any. NULL for folders spawned by a one-time "Add Files" import (see
+  // useImport.ts) or created manually — those are never a registered root.
+  root_folder_id: number | null
+}
+
+export type LibraryRootStatus = 'online' | 'offline' | 'missing'
+
+export type LibraryRootRow = {
+  id: number
+  name: string
+  path: string
+  created_at: number
+  last_scanned_at: number | null
+  status: LibraryRootStatus
 }
 
 export type BoardRow = {
@@ -55,8 +93,12 @@ export type BoardRow = {
   criteria: string | null  // JSON-encoded string[] | null = manual-only
 }
 
-// created_at is set server-side (strftime('%s','now')) at insert time — callers never supply it
-export type DbTrackInsert = Omit<DbTrackRow, 'id' | 'created_at'>
+// created_at/updated_at/client_uuid/missing_since are all set server-side at insert
+// time (strftime/randomblob defaults, or NULL) — callers never supply them.
+export type DbTrackInsert = Omit<
+  DbTrackRow,
+  'id' | 'created_at' | 'updated_at' | 'client_uuid' | 'missing_since'
+>
 
 export type CrateRow = {
   id: number
@@ -108,7 +150,9 @@ function db(): Database.Database {
         label        TEXT,
         waveform     TEXT,
         artwork_path TEXT,
-        created_at   INTEGER
+        created_at   INTEGER,
+        last_modified INTEGER,
+        filename     TEXT
       );
       CREATE TABLE IF NOT EXISTS _schema_migrations (name TEXT PRIMARY KEY);
       INSERT OR IGNORE INTO _schema_migrations VALUES ('add_extended_fields_v2');
@@ -148,11 +192,22 @@ function db(): Database.Database {
         label      TEXT    NOT NULL DEFAULT '',
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
       );
+      CREATE TABLE IF NOT EXISTS library_roots (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        name             TEXT    NOT NULL,
+        path             TEXT    NOT NULL UNIQUE,
+        created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        last_scanned_at  INTEGER,
+        status           TEXT    NOT NULL DEFAULT 'online'
+      );
       CREATE TABLE IF NOT EXISTS folders (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         name             TEXT    NOT NULL,
         parent_folder_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
-        created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        updated_at       INTEGER,
+        path             TEXT,
+        root_folder_id   INTEGER REFERENCES library_roots(id) ON DELETE SET NULL
       );
       CREATE TABLE IF NOT EXISTS boards (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,11 +246,50 @@ function db(): Database.Database {
       // Nullable — existing rows have no known "date added", new inserts set it explicitly
       _db.exec(`ALTER TABLE tracks ADD COLUMN created_at INTEGER`)
     }
+    if (!colNames.has('updated_at')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN updated_at INTEGER`)
+    }
+    if (!colNames.has('client_uuid')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN client_uuid TEXT`)
+    }
+    if (!colNames.has('partial_hash')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN partial_hash TEXT`)
+    }
+    if (!colNames.has('missing_since')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN missing_since INTEGER`)
+    }
+    if (!colNames.has('last_modified')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN last_modified INTEGER`)
+    }
+    if (!colNames.has('filename')) {
+      _db.exec(`ALTER TABLE tracks ADD COLUMN filename TEXT`)
+    }
+
+    // Stage 2a2: backfill client_uuid for any row that predates the column.
+    // Logical identity only (see decision doc) — not used as a join/lookup key
+    // anywhere, so a SQLite-side random id is fine; no need for Node's crypto.
+    _db.exec(`UPDATE tracks SET client_uuid = lower(hex(randomblob(16))) WHERE client_uuid IS NULL`)
 
     // Stage 2b: boards.criteria column
     const boardCols = _db.prepare('PRAGMA table_info(boards)').all() as { name: string }[]
     if (!new Set(boardCols.map((c) => c.name)).has('criteria')) {
       _db.exec(`ALTER TABLE boards ADD COLUMN criteria TEXT DEFAULT NULL`)
+    }
+
+    // Stage 2c: folders.path column — nullable, only ever populated at import
+    // time going forward (see FolderRow). Existing rows stay NULL; never backfilled by inference.
+    const folderCols = _db.prepare('PRAGMA table_info(folders)').all() as { name: string }[]
+    if (!new Set(folderCols.map((c) => c.name)).has('path')) {
+      _db.exec(`ALTER TABLE folders ADD COLUMN path TEXT`)
+    }
+    const folderColNames = new Set(
+      (_db.prepare('PRAGMA table_info(folders)').all() as { name: string }[]).map((c) => c.name)
+    )
+    if (!folderColNames.has('updated_at')) {
+      _db.exec(`ALTER TABLE folders ADD COLUMN updated_at INTEGER`)
+    }
+    if (!folderColNames.has('root_folder_id')) {
+      _db.exec(`ALTER TABLE folders ADD COLUMN root_folder_id INTEGER REFERENCES library_roots(id) ON DELETE SET NULL`)
     }
 
     // Stage 2.5: seed default boards (runs once, guarded by migration table)
@@ -240,6 +334,25 @@ function db(): Database.Database {
     } catch {
       // Index may already exist with a different definition; non-fatal
     }
+    try {
+      _db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_client_uuid
+         ON tracks(client_uuid) WHERE client_uuid IS NOT NULL`
+      )
+    } catch {
+      // non-fatal
+    }
+
+    // Stage 5: grouped-view indexes (Artists/Albums/Genres) — these fields
+    // are queried/grouped constantly once a library reaches tens of
+    // thousands of tracks; a full scan per view load doesn't hold up at scale.
+    _db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
+      CREATE INDEX IF NOT EXISTS idx_tracks_album  ON tracks(album);
+      CREATE INDEX IF NOT EXISTS idx_tracks_genre  ON tracks(genre);
+      CREATE INDEX IF NOT EXISTS idx_folders_root   ON folders(root_folder_id);
+      CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_folder_id);
+    `)
   }
   return _db
 }
@@ -248,20 +361,29 @@ export function getAllTracks(): DbTrackRow[] {
   return db().prepare('SELECT * FROM tracks ORDER BY id').all() as DbTrackRow[]
 }
 
-export function insertTracks(rows: DbTrackInsert[]): number[] {
+export function getTrackById(id: number): DbTrackRow | undefined {
+  return db().prepare('SELECT * FROM tracks WHERE id = ?').get(id) as DbTrackRow | undefined
+}
+
+export function insertTracks(rows: DbTrackInsert[]): { id: number; inserted: boolean }[] {
   if (!rows.length) return []
   const stmt = db().prepare(`
     INSERT OR IGNORE INTO tracks
       (title, artist, bpm, key_val, genre, energy, column_name, folder, folder_id, filepath,
        camelot, openkey, duration_str, duration_sec, file_size_mb, format, album, year,
-       remixer, grouping, composer, comment, label, waveform, artwork_path, created_at)
+       remixer, grouping, composer, comment, label, waveform, artwork_path, partial_hash,
+       last_modified, filename, client_uuid, created_at)
     VALUES
       (@title, @artist, @bpm, @key_val, @genre, @energy, @column_name, @folder, @folder_id, @filepath,
        @camelot, @openkey, @duration_str, @duration_sec, @file_size_mb, @format, @album, @year,
-       @remixer, @grouping, @composer, @comment, @label, @waveform, @artwork_path, strftime('%s','now'))
+       @remixer, @grouping, @composer, @comment, @label, @waveform, @artwork_path, @partial_hash,
+       @last_modified, @filename, lower(hex(randomblob(16))), strftime('%s','now'))
   `)
   const insertAll = db().transaction((rows: DbTrackInsert[]) =>
-    rows.map((row) => Number(stmt.run(row).lastInsertRowid))
+    rows.map((row) => {
+      const result = stmt.run(row)
+      return { id: Number(result.lastInsertRowid), inserted: result.changes > 0 }
+    })
   )
   return insertAll(rows)
 }
@@ -278,7 +400,10 @@ export function updateTrackFields(id: number, fields: Record<string, unknown>): 
     else if (Array.isArray(v) || (typeof v === 'object' && v !== null)) safe[k] = JSON.stringify(v)
     else safe[k] = v
   }
-  const setClauses = keys.map((k) => `${k} = @${k}`).join(', ')
+  // updated_at is always stamped here rather than left to callers — every
+  // write path (including internal tag-writeback edits) goes through this
+  // function, so this is the one place identity/freshness bookkeeping lives.
+  const setClauses = [...keys.map((k) => `${k} = @${k}`), `updated_at = strftime('%s','now')`].join(', ')
   db()
     .prepare(`UPDATE tracks SET ${setClauses} WHERE id = @id`)
     .run({ ...safe, id })
@@ -488,15 +613,21 @@ export function updateTrackFolderIds(entries: { trackId: number; folderId: numbe
 }
 
 // Creates the full folder tree for one import batch.
-// relativeDirs are paths relative to the import root (e.g. "House/Techno").
-// Returns a map from relative path → folder id; "" maps to the root folder id.
-export function ensureFolderTree(rootName: string, relativeDirs: string[]): Record<string, number> {
+// rootAbsolutePath is the real, absolute directory the user selected to
+// import — relativeDirs are paths relative to it (e.g. "House/Techno").
+// Every node's true on-disk path is recorded (see FolderRow.path) since this
+// is the one place that absolute path is ever known; it's never reconstructed
+// or inferred afterward. Returns a map from relative path → folder id; ""
+// maps to the root folder id.
+export function ensureFolderTree(rootAbsolutePath: string, relativeDirs: string[]): Record<string, number> {
   const d = db()
   const pathToId: Record<string, number> = {}
+  const rootName = basename(rootAbsolutePath) || rootAbsolutePath
 
   const run = d.transaction(() => {
     const rootId = Number(
-      d.prepare('INSERT INTO folders (name, parent_folder_id) VALUES (?, NULL)').run(rootName).lastInsertRowid
+      d.prepare('INSERT INTO folders (name, parent_folder_id, path) VALUES (?, NULL, ?)')
+        .run(rootName, rootAbsolutePath).lastInsertRowid
     )
     pathToId[''] = rootId
 
@@ -510,19 +641,124 @@ export function ensureFolderTree(rootName: string, relativeDirs: string[]): Reco
     }
 
     const sorted = [...allPaths].sort((a, b) => a.split('/').length - b.split('/').length)
-    const ins = d.prepare('INSERT INTO folders (name, parent_folder_id) VALUES (?, ?)')
+    const ins = d.prepare('INSERT INTO folders (name, parent_folder_id, path) VALUES (?, ?, ?)')
 
-    for (const path of sorted) {
-      const parts = path.split('/')
+    for (const relPath of sorted) {
+      const parts = relPath.split('/')
       const name = parts[parts.length - 1]
       const parentPath = parts.slice(0, -1).join('/')
       const parentId = pathToId[parentPath] ?? rootId
-      pathToId[path] = Number(ins.run(name, parentId).lastInsertRowid)
+      pathToId[relPath] = Number(ins.run(name, parentId, join(rootAbsolutePath, relPath)).lastInsertRowid)
     }
   })
 
   run()
   return pathToId
+}
+
+// ── Library roots ("Import Library") ────────────────────────────────────────
+// A registered, durable root — distinct from ensureFolderTree's one-time use
+// by "Add Files". Rescanning the SAME root must merge into its existing
+// folder tree rather than spawn a parallel duplicate (the bug the plain
+// ensureFolderTree has, which is why Add Files stays on that path deliberately).
+
+export function getLibraryRoots(): LibraryRootRow[] {
+  return db().prepare('SELECT * FROM library_roots ORDER BY name').all() as LibraryRootRow[]
+}
+
+export function getLibraryRootByPath(rootPath: string): LibraryRootRow | undefined {
+  return db().prepare('SELECT * FROM library_roots WHERE path = ?').get(rootPath) as LibraryRootRow | undefined
+}
+
+export function setLibraryRootStatus(id: number, status: LibraryRootStatus): void {
+  db().prepare('UPDATE library_roots SET status = ? WHERE id = ?').run(status, id)
+}
+
+export function markLibraryRootScanned(id: number): void {
+  db().prepare(`UPDATE library_roots SET last_scanned_at = strftime('%s','now'), status = 'online' WHERE id = ?`).run(id)
+}
+
+// Stops tracking a root as a registered library source. Deliberately does
+// NOT delete its folders or tracks — only detaches them (root_folder_id set
+// NULL via ON DELETE SET NULL) so already-imported music isn't lost.
+export function deleteLibraryRoot(id: number): void {
+  db().prepare('DELETE FROM library_roots WHERE id = ?').run(id)
+}
+
+// Creates the library_roots row (or reuses it if this path was already
+// registered) and merges the scanned folder tree into whatever already
+// exists for that root — a second scan of the same root never duplicates
+// folders, it only adds what's new.
+export function ensureLibraryRootTree(
+  rootAbsolutePath: string,
+  relativeDirs: string[]
+): { libraryRootId: number; folderIdByRelPath: Record<string, number> } {
+  const d = db()
+  const rootName = basename(rootAbsolutePath) || rootAbsolutePath
+
+  const run = d.transaction(() => {
+    const existingRoot = d.prepare('SELECT * FROM library_roots WHERE path = ?').get(rootAbsolutePath) as
+      | LibraryRootRow
+      | undefined
+    const libraryRootId = existingRoot
+      ? existingRoot.id
+      : Number(d.prepare('INSERT INTO library_roots (name, path) VALUES (?, ?)').run(rootName, rootAbsolutePath).lastInsertRowid)
+
+    // Load whatever folder tree already exists for this root (from a prior
+    // scan) so we only create what's genuinely new.
+    const existingFolders = d
+      .prepare('SELECT id, name, parent_folder_id FROM folders WHERE root_folder_id = ?')
+      .all(libraryRootId) as { id: number; name: string; parent_folder_id: number | null }[]
+    const byId = new Map(existingFolders.map((f) => [f.id, f]))
+
+    let rootFolderId = existingFolders.find((f) => f.parent_folder_id === null)?.id
+    if (rootFolderId === undefined) {
+      rootFolderId = Number(
+        d.prepare('INSERT INTO folders (name, parent_folder_id, path, root_folder_id) VALUES (?, NULL, ?, ?)')
+          .run(rootName, rootAbsolutePath, libraryRootId).lastInsertRowid
+      )
+    }
+
+    const pathToId: Record<string, number> = { '': rootFolderId }
+    // Reconstruct the relative path of every pre-existing folder by walking
+    // its parent chain back to the root, so a second scan recognizes it.
+    for (const f of existingFolders) {
+      if (f.id === rootFolderId) continue
+      const chain: string[] = []
+      let cur: typeof f | undefined = f
+      let reachedRoot = false
+      while (cur) {
+        if (cur.id === rootFolderId) { reachedRoot = true; break }
+        chain.unshift(cur.name)
+        cur = cur.parent_folder_id !== null ? byId.get(cur.parent_folder_id) : undefined
+      }
+      if (reachedRoot) pathToId[chain.join('/')] = f.id
+    }
+
+    const allPaths = new Set<string>()
+    for (const dir of relativeDirs) {
+      if (!dir) continue
+      const parts = dir.split('/')
+      for (let i = 1; i <= parts.length; i++) allPaths.add(parts.slice(0, i).join('/'))
+    }
+    const sorted = [...allPaths].sort((a, b) => a.split('/').length - b.split('/').length)
+    const ins = d.prepare('INSERT INTO folders (name, parent_folder_id, path, root_folder_id) VALUES (?, ?, ?, ?)')
+
+    for (const relPath of sorted) {
+      if (pathToId[relPath] !== undefined) continue // already exists from a prior scan of this root
+      const parts = relPath.split('/')
+      const name = parts[parts.length - 1]
+      const parentPath = parts.slice(0, -1).join('/')
+      const parentId = pathToId[parentPath] ?? rootFolderId
+      pathToId[relPath] = Number(
+        ins.run(name, parentId, join(rootAbsolutePath, relPath), libraryRootId).lastInsertRowid
+      )
+    }
+
+    return { libraryRootId, folderIdByRelPath: pathToId }
+  })
+
+  return run()
 }
 
 // ── Boards ────────────────────────────────────────────────────────────────────
@@ -597,6 +833,26 @@ export function getSetlistFilepaths(setlistId: number): string[] {
       )
       .all(setlistId) as { filepath: string }[]
   ).map((r) => r.filepath)
+}
+
+// ── Orphan reconciliation ────────────────────────────────────────────────────
+// Track identity is client_uuid/id, not filepath — a relink only ever updates
+// the path pointer. folder_id (the user's manual organization in the app) is
+// deliberately left untouched; where a file physically lives on disk moving
+// shouldn't reshuffle where the user filed it in CrateCloud.
+export function relinkTrackFilepath(id: number, newFilepath: string): void {
+  db()
+    .prepare(`UPDATE tracks SET filepath = ?, missing_since = NULL, updated_at = strftime('%s','now') WHERE id = ?`)
+    .run(newFilepath, id)
+}
+
+export function markTracksMissing(ids: number[]): void {
+  if (!ids.length) return
+  db()
+    .prepare(
+      `UPDATE tracks SET missing_since = strftime('%s','now') WHERE id IN (SELECT value FROM json_each(?))`
+    )
+    .run(JSON.stringify(ids))
 }
 
 // ── Duplicate detection ─────────────────────────────────────────────────────

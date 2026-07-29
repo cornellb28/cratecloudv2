@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
 import type { BillingState } from '../main/billing'
+import type { FolderMoveResult, UndoMoveEntry, ScanResult, ScanProgress } from '../main/index'
+import type { LibraryRootRow } from '../main/db'
 
 const api = {
   // ── Audio analysis ─────────────────────────────────────────────────────
@@ -148,7 +150,7 @@ const api = {
 
   // ── Folders ─────────────────────────────────────────────────────────────────
   folders: {
-    getAll: (): Promise<{ id: number; name: string; parent_folder_id: number | null; created_at: number }[]> =>
+    getAll: (): Promise<{ id: number; name: string; parent_folder_id: number | null; created_at: number; path: string | null }[]> =>
       ipcRenderer.invoke('folder:getAll'),
     insert: (name: string, parentId: number | null): Promise<number> =>
       ipcRenderer.invoke('folder:insert', name, parentId),
@@ -159,8 +161,27 @@ const api = {
     delete: (id: number): Promise<void> => ipcRenderer.invoke('folder:delete', id),
     updateTrackFolders: (entries: { trackId: number; folderId: number | null }[]): Promise<void> =>
       ipcRenderer.invoke('folder:updateTrackFolders', entries),
-    ensureTree: (rootName: string, relativeDirs: string[]): Promise<Record<string, number>> =>
-      ipcRenderer.invoke('folder:ensureTree', rootName, relativeDirs),
+    ensureTree: (rootAbsolutePath: string, relativeDirs: string[]): Promise<Record<string, number>> =>
+      ipcRenderer.invoke('folder:ensureTree', rootAbsolutePath, relativeDirs),
+    moveTracksToFolder: (trackIds: number[], targetFolderId: number): Promise<FolderMoveResult[]> =>
+      ipcRenderer.invoke('folder:moveTracksToFolder', trackIds, targetFolderId),
+    undoMoveBatch: (entries: UndoMoveEntry[]): Promise<FolderMoveResult[]> =>
+      ipcRenderer.invoke('folder:undoMoveBatch', entries),
+  },
+
+  // ── Library rescan / orphan reconciliation ──────────────────────────────────
+  library: {
+    rescanFolder: (folderPath: string): Promise<{ relinked: number; stillMissing: number }> =>
+      ipcRenderer.invoke('library:rescanFolder', folderPath),
+    importRoot: (rootPath: string): Promise<ScanResult> =>
+      ipcRenderer.invoke('library:importRoot', rootPath),
+    getRoots: (): Promise<LibraryRootRow[]> => ipcRenderer.invoke('library:getRoots'),
+    deleteRoot: (id: number): Promise<void> => ipcRenderer.invoke('library:deleteRoot', id),
+    onScanProgress: (callback: (progress: ScanProgress) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, progress: ScanProgress) => callback(progress)
+      ipcRenderer.on('library-scan-progress', handler)
+      return () => ipcRenderer.removeListener('library-scan-progress', handler)
+    },
   },
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────

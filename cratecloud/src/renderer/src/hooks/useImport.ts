@@ -55,7 +55,7 @@ export function useImport() {
             if (allowed.length) {
               // Build folder tree in DB and map each result to its folder_id
               const relativeDirs = [...new Set(allowed.map((r) => r.relative_dir ?? ''))]
-              const folderIdMap = await window.api.folders.ensureTree(rootName, relativeDirs)
+              const folderIdMap = await window.api.folders.ensureTree(folderPath, relativeDirs)
               await reinitFolders()
               const withFolderIds = allowed.map((r) => ({
                 ...r,

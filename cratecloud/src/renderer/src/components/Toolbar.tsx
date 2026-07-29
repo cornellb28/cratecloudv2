@@ -12,6 +12,8 @@ const VIEWS: { label: string; id: string }[] = [
   { label: '⊞ Board', id: 'Board' },
   { label: '⊟ Grid', id: 'Grid' },
   { label: '⊿ Folders', id: 'Folders' },
+  { label: '♫ Albums', id: 'Albums' },
+  { label: '# Genres', id: 'Genres' },
 ]
 
 const HINT_LINES = [

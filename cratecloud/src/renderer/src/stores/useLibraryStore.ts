@@ -16,6 +16,12 @@ type DbTrackRow = {
   waveform: string | null
   artwork_path: string | null
   created_at: number | null
+  updated_at: number | null
+  client_uuid: string | null
+  partial_hash: string | null
+  missing_since: number | null
+  last_modified: number | null
+  filename: string | null
 }
 
 // ── computeStatus ─────────────────────────────────────────────────────────────
@@ -68,6 +74,8 @@ export type ImportedTrackData = {
   label?: string | null
   folder_id?: number | null
   relative_dir?: string
+  partial_hash?: string | null
+  last_modified?: number | null
 }
 
 export type DeletePreference = 'ask' | 'remove' | 'trash'
@@ -103,6 +111,9 @@ function rowToTrack(row: DbTrackRow): Track {
     label: row.label ?? undefined,
     artwork_path: row.artwork_path ?? undefined,
     created_at: row.created_at,
+    missing_since: row.missing_since,
+    filename: row.filename ?? undefined,
+    last_modified: row.last_modified,
   }
 }
 
@@ -400,12 +411,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         label: r.label ?? '',
         waveform: r.waveform ? JSON.stringify(r.waveform) : null,
         artwork_path: r.artwork_path ?? null,
+        partial_hash: r.partial_hash ?? null,
+        last_modified: r.last_modified ?? null,
+        filename: r.filename ?? (r.filepath ? r.filepath.split('/').pop()! : null),
       }
     })
 
-    let ids: number[]
+    let insertResults: { id: number; inserted: boolean }[]
     try {
-      ids = await window.api.db.insertTracks(rows)
+      insertResults = await window.api.db.insertTracks(rows)
     } catch (err) {
       console.error('[db] insertTracks failed:', err)
       return
@@ -414,8 +428,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const buckets: Record<string, Track[]> = {}
 
     rows.forEach((row, i) => {
+      // A false `inserted` means this filepath already existed (INSERT OR
+      // IGNORE skipped it) — lastInsertRowid in that case belongs to some
+      // other row in the batch, not this one, so it must not be used to
+      // fabricate a phantom in-memory track.
+      if (!insertResults[i].inserted) return
       const track: Track = {
-        id: ids[i],
+        id: insertResults[i].id,
         title: row.title,
         artist: row.artist,
         bpm: row.bpm,

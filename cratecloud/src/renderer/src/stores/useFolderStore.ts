@@ -5,6 +5,9 @@ export type FolderNode = {
   name: string
   parent_folder_id: number | null
   created_at: number
+  // Absolute on-disk directory, only known for folders created via import.
+  // NULL means this folder can't be a drag-move destination — see db.ts FolderRow.
+  path: string | null
 }
 
 type FolderState = {
@@ -30,7 +33,7 @@ export const useFolderStore = create<FolderState>((set, get) => ({
   createFolder: async (name, parentId) => {
     const id = await window.api.folders.insert(name, parentId)
     set((s) => ({
-      folders: [...s.folders, { id, name, parent_folder_id: parentId, created_at: Math.floor(Date.now() / 1000) }],
+      folders: [...s.folders, { id, name, parent_folder_id: parentId, created_at: Math.floor(Date.now() / 1000), path: null }],
     }))
     return id
   },

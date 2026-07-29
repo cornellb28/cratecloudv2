@@ -232,6 +232,25 @@ def write_tags(filepath: str, bpm: float, camelot: str) -> bool:
         return False
 
 
+def probe_duration(filepath: str) -> dict:
+    """Cheap header-only probe: size + duration via mutagen, no audio decode.
+    Used only as a match signal during orphan reconciliation — never for tagging."""
+    if not os.path.exists(filepath):
+        return {'success': False, 'error': f'File not found: {filepath}', 'filepath': filepath}
+    try:
+        file_size_mb = round(os.path.getsize(filepath) / (1024 * 1024), 2)
+        audio = mutagen.File(filepath)
+        duration_sec = round(float(audio.info.length), 2) if audio and audio.info else None
+        return {
+            'success': True,
+            'filepath': filepath,
+            'file_size_mb': file_size_mb,
+            'duration_sec': duration_sec,
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e), 'filepath': filepath}
+
+
 def analyze_file(filepath: str, write_back: bool = False) -> dict:
     """Full pipeline: validate → read tags → analyze → optionally write back."""
     start_time = time.time()
@@ -329,6 +348,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Analyze an audio file for BPM, key, and metadata.')
     parser.add_argument('filepath', help='Path to the audio file')
     parser.add_argument('--write-back', action='store_true', help='Write BPM and key back to file tags')
+    parser.add_argument('--probe', action='store_true', help='Cheap size+duration probe only, no analysis')
     parsed = parser.parse_args()
-    result = analyze_file(parsed.filepath, write_back=parsed.write_back)
+    result = probe_duration(parsed.filepath) if parsed.probe else analyze_file(parsed.filepath, write_back=parsed.write_back)
     print(json.dumps(result))

@@ -1,14 +1,14 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
-import { join, extname, basename, relative } from 'path'
+import { join, extname, basename, relative, dirname } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
-import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile } from 'fs/promises'
+import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile, open } from 'fs/promises'
 import { createReadStream } from 'fs'
 import * as http from 'http'
 import type { AddressInfo } from 'net'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
+import { analyzeFile, editTags, probeFile, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import {
   getBillingState,
   startCheckout,
@@ -21,7 +21,7 @@ import {
   type PlanId,
 } from './billing'
 import {
-  getAllTracks, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
+  getAllTracks, getTrackById, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
   autoMoveTracksToColumn, resetTrackStatusManual, updateBoardCriteria,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
   getAllCrateTrackIds, addTracksToCrate, removeTracksFromCrate,
@@ -34,6 +34,9 @@ import {
   updateTrackFolderIds, ensureFolderTree,
   getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
   getDismissedDuplicatePairs, addDismissedDuplicatePair,
+  relinkTrackFilepath, markTracksMissing,
+  getLibraryRoots, deleteLibraryRoot, ensureLibraryRootTree, markLibraryRootScanned,
+  type DbTrackInsert,
 } from './db'
 
 // ── Billing: cratecloud:// deep link (Stripe Checkout return) ────────────────
@@ -139,6 +142,121 @@ const AUDIO_MIME: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
+}
+
+const PARTIAL_HASH_PROBE_BYTES = 65536
+
+// Cheap fingerprint: sha256 of a 64KB slice ~40% into the file. Deliberately
+// avoids full-file hashing (would freeze on large libraries) and avoids
+// parsing ID3v2/APEv2/MP4 metadata containers (exactly what CrateCloud's own
+// tag writeback mutates) by staying away from the head/tail of the file.
+// Captured once at import time so it's still available for comparison after
+// the file itself has gone missing — recomputing it later isn't possible.
+async function computePartialHash(filepath: string): Promise<string | null> {
+  try {
+    const { size } = await stat(filepath)
+    if (size <= PARTIAL_HASH_PROBE_BYTES) {
+      const buf = await readFile(filepath)
+      return createHash('sha256').update(buf).digest('hex')
+    }
+    const offset = Math.floor(size * 0.4)
+    const fh = await open(filepath, 'r')
+    try {
+      const buf = Buffer.alloc(PARTIAL_HASH_PROBE_BYTES)
+      await fh.read(buf, 0, PARTIAL_HASH_PROBE_BYTES, offset)
+      return createHash('sha256').update(buf).digest('hex')
+    } finally {
+      await fh.close()
+    }
+  } catch {
+    return null
+  }
+}
+
+async function getLastModified(filepath: string): Promise<number | null> {
+  try {
+    return Math.floor((await stat(filepath)).mtimeMs / 1000)
+  } catch {
+    return null
+  }
+}
+
+// Moves a file into toFolder, auto-suffixing on name collision rather than
+// overwriting. Tries rename first (fast path, same volume); falls back to
+// copy-verify-delete on EXDEV (cross-device). The source is never deleted
+// until the copy's byte size is confirmed to match — a failed/partial copy
+// leaves the original untouched.
+async function moveFileToFolder(fromPath: string, toFolder: string): Promise<string> {
+  const ext = extname(fromPath)
+  const base = basename(fromPath, ext)
+  let toPath = join(toFolder, basename(fromPath))
+  let counter = 1
+  while (true) {
+    try { await stat(toPath); toPath = join(toFolder, `${base} (${counter++})${ext}`) }
+    catch { break } // stat threw → path doesn't exist → safe to use
+    if (counter > 99) throw new Error('Too many filename collisions at destination')
+  }
+  try {
+    await rename(fromPath, toPath)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+      const sourceSize = (await stat(fromPath)).size
+      await copyFile(fromPath, toPath)
+      const copiedSize = (await stat(toPath)).size
+      if (copiedSize !== sourceSize) {
+        await unlink(toPath).catch(() => {})
+        throw new Error(`Copy verification failed (${copiedSize} bytes copied, expected ${sourceSize}) — source left untouched`)
+      }
+      await unlink(fromPath)
+    } else {
+      throw err
+    }
+  }
+  return toPath
+}
+
+export type FolderMoveResult = {
+  trackId: number
+  success: boolean
+  moved: boolean // true = a real file move happened; false = logical-only reassignment or a no-op
+  oldFilepath?: string
+  newFilepath?: string
+  oldFolderId?: number | null
+  error?: string
+}
+
+export type UndoMoveEntry = {
+  trackId: number
+  oldFilepath?: string
+  newFilepath?: string
+  oldFolderId: number | null
+}
+
+export type ScanResult = {
+  library_root_id: number
+  total_folders_found: number
+  total_tracks_found: number
+  total_files_scanned: number
+  total_errors: number
+  scan_duration: number // milliseconds
+}
+
+export type ScanProgress = {
+  current: number
+  total: number
+  file: string
+}
+
+function describeFsError(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException)?.code
+  switch (code) {
+    case 'ENOENT': return 'File or destination folder not found — check the drive is connected'
+    case 'EACCES': case 'EPERM': return 'Permission denied'
+    case 'EROFS': return 'Destination is read-only'
+    case 'ENOSPC': return 'Not enough disk space at destination'
+    case 'ENOTDIR': return 'Destination is not a folder'
+    default: return err instanceof Error ? err.message : String(err)
+  }
 }
 
 async function saveArtwork(filepath: string, b64: string): Promise<string> {
@@ -269,6 +387,10 @@ app.whenReady().then(() => {
       try { result.artwork_path = await saveArtwork(filepath, result.artwork_b64) } catch { /* non-fatal */ }
       delete result.artwork_b64
     }
+    if (result.success) {
+      result.partial_hash = await computePartialHash(filepath)
+      result.last_modified = await getLastModified(filepath)
+    }
     return result
   })
 
@@ -308,6 +430,10 @@ app.whenReady().then(() => {
             try { r.artwork_path = await saveArtwork(filepath, r.artwork_b64) } catch { /* non-fatal */ }
             delete r.artwork_b64
           }
+          if (r.success) {
+            r.partial_hash = await computePartialHash(filepath)
+            r.last_modified = await getLastModified(filepath)
+          }
           r.relative_dir = relative_dir
           results[i] = r
         } catch (err) {
@@ -324,6 +450,253 @@ app.whenReady().then(() => {
 
     await Promise.all(workers)
     return results
+  })
+
+  // ── Import Library: register a root + recursive scan ──────────────────────
+  // Distinct from Add Files (analyze-file/analyze-folder, untouched above):
+  // this registers a durable library_roots row and merges into its existing
+  // folder tree on repeat scans instead of creating a parallel one. Unlike
+  // analyze-folder, results are inserted in batches as the walk proceeds —
+  // never accumulated into one giant array — so memory stays bounded and an
+  // IPC payload never has to carry 100,000 analysis objects at once.
+  ipcMain.handle('library:importRoot', async (event, rootPath: string): Promise<ScanResult> => {
+    const startedAt = Date.now()
+
+    type FileEntry = { filepath: string; relative_dir: string }
+    const allDirs = new Set<string>(['']) // '' = the root itself
+    const fileEntries: FileEntry[] = []
+    let walkErrors = 0
+
+    async function walk(dir: string, relDir: string): Promise<void> {
+      let entries
+      try {
+        entries = await readdir(dir, { withFileTypes: true })
+      } catch {
+        walkErrors++
+        return
+      }
+      for (const entry of entries) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          const childRel = relDir ? `${relDir}/${entry.name}` : entry.name
+          allDirs.add(childRel)
+          await walk(full, childRel)
+        } else if (AUDIO_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+          fileEntries.push({ filepath: full, relative_dir: relDir })
+        }
+      }
+    }
+    await walk(rootPath, '')
+
+    const { libraryRootId, folderIdByRelPath } = ensureLibraryRootTree(
+      rootPath,
+      [...allDirs].filter((d) => d !== '')
+    )
+
+    const total = fileEntries.length
+    let completed = 0
+    let tracksInserted = 0
+    let analysisErrors = 0
+    const CONCURRENCY = 4
+    const BATCH_SIZE = 200
+    let pendingBatch: DbTrackInsert[] = []
+
+    const flushBatch = (): void => {
+      if (!pendingBatch.length) return
+      const results = insertTracks(pendingBatch)
+      tracksInserted += results.filter((r) => r.inserted).length
+      pendingBatch = []
+    }
+
+    let nextIdx = 0
+    const rootBasename = basename(rootPath)
+    const workers = Array.from({ length: Math.min(CONCURRENCY, total) }, async () => {
+      while (true) {
+        const i = nextIdx++
+        if (i >= total) break
+        const { filepath, relative_dir } = fileEntries[i]
+        try {
+          const r = await analyzeFile(filepath, { writeBack: false })
+          if (r.success) {
+            let artworkPath: string | null = null
+            if (r.artwork_b64) {
+              try { artworkPath = await saveArtwork(filepath, r.artwork_b64) } catch { /* non-fatal */ }
+            }
+            // bpm/key_val/energy string conversions must stay in sync with
+            // useLibraryStore.ts's addTracks — same DB convention (TEXT columns).
+            const bpm = r.bpm != null ? String(Math.round(r.bpm)) : ''
+            const key_val = r.camelot ?? ''
+            const energy = r.energy != null ? String(Math.min(10, Math.round(r.energy * 10))) : ''
+            pendingBatch.push({
+              title: r.title ?? r.filename ?? 'Unknown',
+              artist: r.artist ?? '',
+              bpm,
+              key_val,
+              genre: r.genre ?? '',
+              energy,
+              column_name: 'Untagged', // real board placement runs once, in bulk, after the scan (recomputeAllAutoStatuses)
+              status_is_manual: 0,
+              folder: rootBasename,
+              folder_id: folderIdByRelPath[relative_dir] ?? folderIdByRelPath[''],
+              filepath: r.filepath,
+              camelot: r.camelot ?? null,
+              openkey: r.openkey ?? null,
+              duration_str: r.duration_str ?? null,
+              duration_sec: r.duration_sec ?? null,
+              file_size_mb: r.file_size_mb ?? null,
+              format: r.format ?? null,
+              album: r.album ?? null,
+              year: r.year ?? null,
+              remixer: r.remixer ?? '',
+              grouping: r.grouping ?? '',
+              composer: r.composer ?? '',
+              comment: r.comment ?? '',
+              label: r.label ?? '',
+              waveform: r.waveform ? JSON.stringify(r.waveform) : null,
+              artwork_path: artworkPath,
+              partial_hash: await computePartialHash(filepath),
+              last_modified: await getLastModified(filepath),
+              filename: r.filename ?? basename(filepath),
+            })
+            if (pendingBatch.length >= BATCH_SIZE) flushBatch()
+          } else {
+            analysisErrors++
+          }
+        } catch {
+          analysisErrors++
+        }
+        completed++
+        event.sender.send('library-scan-progress', { current: completed, total, file: basename(filepath) })
+      }
+    })
+    await Promise.all(workers)
+    flushBatch() // tail end shorter than BATCH_SIZE
+
+    markLibraryRootScanned(libraryRootId)
+
+    return {
+      library_root_id: libraryRootId,
+      total_folders_found: allDirs.size,
+      total_tracks_found: tracksInserted,
+      total_files_scanned: total,
+      total_errors: walkErrors + analysisErrors,
+      scan_duration: Date.now() - startedAt,
+    }
+  })
+
+  ipcMain.handle('library:getRoots', () => getLibraryRoots())
+  ipcMain.handle('library:deleteRoot', (_e, id: number) => deleteLibraryRoot(id))
+
+  // ── Library rescan / orphan reconciliation ────────────────────────────────
+  // Narrow trigger only: a previously-known track's file no longer resolves
+  // on disk (moved/renamed outside the app). Internal edits never need this —
+  // they already know which row they're touching (see updateTrackFields).
+  // Not automatic; the user fires this explicitly (Settings → Rescan Library).
+  ipcMain.handle('library:rescanFolder', async (_event, folderPath: string) => {
+    const tracksWithPath = getAllTracks().filter((t) => t.filepath)
+
+    // 1. Which known tracks no longer resolve on disk? Cheap — stat only, no decode.
+    const missing: typeof tracksWithPath = []
+    {
+      let idx = 0
+      const CONCURRENCY = 8
+      const workers = Array.from({ length: Math.min(CONCURRENCY, tracksWithPath.length) }, async () => {
+        while (idx < tracksWithPath.length) {
+          const track = tracksWithPath[idx++]
+          try {
+            await stat(track.filepath!)
+          } catch {
+            missing.push(track)
+          }
+        }
+      })
+      await Promise.all(workers)
+    }
+
+    if (!missing.length) {
+      // Nothing to reconcile. Any genuinely new files in this folder are
+      // picked up by the normal import flow the caller runs afterward.
+      return { relinked: 0, stillMissing: 0 }
+    }
+
+    // 2. Walk the target folder for audio files not already a known filepath.
+    const knownPaths = new Set(tracksWithPath.map((t) => t.filepath as string))
+    type Candidate = { filepath: string; size: number; duration: number | null }
+    const candidates: Candidate[] = []
+    async function walk(dir: string): Promise<void> {
+      const entries = await readdir(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          await walk(full)
+        } else if (AUDIO_EXTENSIONS.has(extname(entry.name).toLowerCase()) && !knownPaths.has(full)) {
+          try {
+            const { size } = await stat(full)
+            candidates.push({ filepath: full, size, duration: null })
+          } catch { /* vanished mid-walk, skip */ }
+        }
+      }
+    }
+    await walk(folderPath)
+
+    if (!candidates.length) {
+      markTracksMissing(missing.map((t) => t.id))
+      return { relinked: 0, stillMissing: missing.length }
+    }
+
+    // 3. Match each missing track against THIS SCAN's candidates only — never
+    // against the whole disk or whole library, to keep this cheap.
+    let relinkedCount = 0
+    const stillMissingIds: number[] = []
+
+    for (const track of missing) {
+      const expectedBytes = track.file_size_mb != null ? track.file_size_mb * 1024 * 1024 : null
+      // file_size_mb was rounded to 2dp on import — allow a small tolerance
+      const sizeMatches = expectedBytes == null
+        ? []
+        : candidates.filter((c) => Math.abs(c.size - expectedBytes) < 1024 * 50)
+
+      let matched: Candidate | null = null
+
+      if (sizeMatches.length === 1) {
+        matched = sizeMatches[0]
+      } else if (sizeMatches.length > 1) {
+        // Ambiguous on size alone — probe duration (cheap: mutagen header
+        // read, no audio decode) for just the tied candidates.
+        for (const c of sizeMatches) {
+          if (c.duration == null) {
+            const probe = await probeFile(c.filepath)
+            c.duration = probe.success ? (probe.duration_sec ?? null) : null
+          }
+        }
+        const durationMatches = sizeMatches.filter(
+          (c) => c.duration != null && track.duration_sec != null && Math.abs(c.duration - track.duration_sec) < 0.5
+        )
+        if (durationMatches.length === 1) {
+          matched = durationMatches[0]
+        } else if (durationMatches.length > 1 && track.partial_hash) {
+          // Still tied — break with the fingerprint captured at import time.
+          // Only possible for tracks imported after partial_hash existed;
+          // older rows without one simply can't be disambiguated this way.
+          for (const c of durationMatches) {
+            const h = await computePartialHash(c.filepath)
+            if (h && h === track.partial_hash) { matched = c; break }
+          }
+        }
+        // Still ambiguous → fall through and leave it missing rather than guess.
+      }
+
+      if (matched) {
+        candidates.splice(candidates.indexOf(matched), 1) // one file can't resolve two missing tracks
+        relinkTrackFilepath(track.id, matched.filepath)
+        relinkedCount++
+      } else {
+        stillMissingIds.push(track.id)
+      }
+    }
+
+    if (stillMissingIds.length) markTracksMissing(stillMissingIds)
+    return { relinked: relinkedCount, stillMissing: stillMissingIds.length }
   })
 
   // ── File dialogs ──────────────────────────────────────────────────────────
@@ -361,29 +734,9 @@ app.whenReady().then(() => {
   })
 
   // ── File system operations ────────────────────────────────────────────────
-  ipcMain.handle('fs:moveFile', async (_event, fromPath: string, toFolder: string) => {
-    const ext = extname(fromPath)
-    const base = basename(fromPath, ext)
-    // Find a non-colliding destination path
-    let toPath = join(toFolder, basename(fromPath))
-    let counter = 1
-    while (true) {
-      try { await stat(toPath); toPath = join(toFolder, `${base} (${counter++})${ext}`) }
-      catch { break } // stat threw → path doesn't exist → safe to use
-      if (counter > 99) throw new Error('Too many filename collisions at destination')
-    }
-    try {
-      await rename(fromPath, toPath)
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-        await copyFile(fromPath, toPath)
-        await unlink(fromPath)
-      } else {
-        throw err
-      }
-    }
-    return toPath
-  })
+  ipcMain.handle('fs:moveFile', async (_event, fromPath: string, toFolder: string) =>
+    moveFileToFolder(fromPath, toFolder)
+  )
 
   ipcMain.handle('fs:trashFile', async (_event, filepath: string) => {
     await shell.trashItem(filepath)
@@ -550,9 +903,69 @@ app.whenReady().then(() => {
     'folder:updateTrackFolders',
     (_e, entries: { trackId: number; folderId: number | null }[]) => updateTrackFolderIds(entries)
   )
-  ipcMain.handle('folder:ensureTree', (_e, rootName: string, relativeDirs: string[]) =>
-    ensureFolderTree(rootName, relativeDirs)
+  ipcMain.handle('folder:ensureTree', (_e, rootAbsolutePath: string, relativeDirs: string[]) =>
+    ensureFolderTree(rootAbsolutePath, relativeDirs)
   )
+
+  // Drag-to-move within the Folders tree: identity is already known (the
+  // dragged row's id/client_uuid), so this is a direct move, never the
+  // size/duration/partial_hash reconciliation used for externally-moved
+  // files — see library:rescanFolder. Each track succeeds or fails on its own.
+  ipcMain.handle('folder:moveTracksToFolder', async (_e, trackIds: number[], targetFolderId: number) => {
+    const folder = getFolders().find((f) => f.id === targetFolderId)
+    const results: FolderMoveResult[] = []
+
+    for (const trackId of trackIds) {
+      const track = getTrackById(trackId)
+      if (!track) {
+        results.push({ trackId, success: false, moved: false, error: 'Track no longer exists' })
+        continue
+      }
+      const oldFolderId = track.folder_id
+
+      if (!track.filepath || !folder?.path) {
+        // No file to move, or destination has no known disk location —
+        // fall back to the pre-existing logical-only reassignment.
+        updateTrackFolderIds([{ trackId, folderId: targetFolderId }])
+        results.push({
+          trackId, success: true, moved: false,
+          oldFilepath: track.filepath ?? undefined, newFilepath: track.filepath ?? undefined, oldFolderId,
+        })
+        continue
+      }
+
+      try {
+        const newPath = await moveFileToFolder(track.filepath, folder.path)
+        updateTrackFields(trackId, { filepath: newPath, folder_id: targetFolderId })
+        results.push({ trackId, success: true, moved: true, oldFilepath: track.filepath, newFilepath: newPath, oldFolderId })
+      } catch (err) {
+        results.push({ trackId, success: false, moved: false, oldFilepath: track.filepath, error: describeFsError(err) })
+      }
+    }
+    return results
+  })
+
+  // Reverses one moveTracksToFolder batch: moves files back (if they were
+  // really moved) and restores folder_id. Best-effort per entry — a failure
+  // on one track doesn't block undoing the rest.
+  ipcMain.handle('folder:undoMoveBatch', async (_e, entries: UndoMoveEntry[]) => {
+    const results: FolderMoveResult[] = []
+    for (const entry of entries) {
+      try {
+        if (entry.oldFilepath === entry.newFilepath) {
+          updateTrackFolderIds([{ trackId: entry.trackId, folderId: entry.oldFolderId }])
+          results.push({ trackId: entry.trackId, success: true, moved: false, oldFolderId: entry.oldFolderId })
+        } else {
+          const restoredPath = await moveFileToFolder(entry.newFilepath!, dirname(entry.oldFilepath!))
+          updateTrackFields(entry.trackId, { filepath: restoredPath, folder_id: entry.oldFolderId })
+          results.push({ trackId: entry.trackId, success: true, moved: true, newFilepath: restoredPath, oldFolderId: entry.oldFolderId })
+        }
+      } catch (err) {
+        results.push({ trackId: entry.trackId, success: false, moved: false, error: describeFsError(err) })
+      }
+    }
+    return results
+  })
 
   ipcMain.on('window:maximize', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)

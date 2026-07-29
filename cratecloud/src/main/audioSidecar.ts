@@ -36,6 +36,8 @@ export type AnalysisResult = {
   artwork_b64?: string | null
   artwork_path?: string | null
   relative_dir?: string  // set by analyze-folder handler, not the sidecar
+  partial_hash?: string | null  // set by the analyze-file/analyze-folder handlers, not the sidecar
+  last_modified?: number | null  // real on-disk mtime (epoch seconds), set by the handlers, not the sidecar
 }
 
 export type ProgressEvent = {
@@ -108,6 +110,23 @@ export async function editTags(
   if (!writeSerato) args.push('--no-serato')
   const stdout = await runScript(python, args)
   return JSON.parse(stdout) as EditTagsResult
+}
+
+export type ProbeResult = {
+  success: boolean
+  filepath: string
+  file_size_mb?: number
+  duration_sec?: number
+  error?: string
+}
+
+// Cheap header-only size+duration check — no audio decode. Used only as a
+// match signal during orphan reconciliation, never for tagging/analysis.
+export async function probeFile(filepath: string): Promise<ProbeResult> {
+  const { python, analyzeScript } = getSidecarPaths()
+  const args = analyzeScript ? [analyzeScript, filepath, '--probe'] : [filepath, '--probe']
+  const stdout = await runScript(python, args)
+  return JSON.parse(stdout) as ProbeResult
 }
 
 export function analyzeFile(

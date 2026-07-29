@@ -26,6 +26,10 @@ export type Track = {
   label?: string
   artwork_path?: string
   created_at?: number | null
+  // Set by library:rescanFolder when the file couldn't be found on disk; cleared on relink.
+  missing_since?: number | null
+  filename?: string
+  last_modified?: number | null
 }
 
 export type Crate = {

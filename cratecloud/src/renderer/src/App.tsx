@@ -18,6 +18,7 @@ import { SetlistView } from './components/setlist/SetlistView'
 import { ArtistExplorer } from './components/ArtistExplorer'
 import { PlayerBar } from './components/PlayerBar'
 import { FolderHierarchyView } from './components/FolderHierarchyView'
+import { GroupedTrackView } from './components/GroupedTrackView'
 import { SettingsView } from './components/SettingsView'
 import { TrackMatchView } from './components/TrackMatchView'
 import { LockedView } from './components/LockedView'
@@ -56,6 +57,8 @@ function AppInner(): React.JSX.Element {
           {activeTab === 'Library' && activeView === 'Board' && <BoardView />}
           {activeTab === 'Library' && activeView === 'Grid' && <LibraryView gridMode />}
           {activeTab === 'Library' && activeView === 'Folders' && <FolderHierarchyView />}
+          {activeTab === 'Library' && activeView === 'Albums' && <GroupedTrackView field="album" heading="Albums" />}
+          {activeTab === 'Library' && activeView === 'Genres' && <GroupedTrackView field="genre" heading="Genres" />}
           {activeTab === 'Artist' && <ArtistExplorer />}
           {activeTab === 'Setlist' && <SetlistView />}
           {activeTab === 'Settings' && <SettingsView />}

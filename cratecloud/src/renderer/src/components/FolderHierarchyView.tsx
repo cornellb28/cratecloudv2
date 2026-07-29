@@ -8,11 +8,16 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useFolderStore, type FolderNode } from '../stores/useFolderStore'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import type { Track } from '../types/track'
+import { MoveProgressModal, type MoveResult } from './MoveProgressModal'
 
 // ── Drag data types ──────────────────────────────────────────────────────────
 type DragData =
   | { type: 'folder'; id: number }
   | { type: 'track'; id: number; currentFolderId: number | undefined }
+
+// Last successful batch, kept for a single-level "Undo" — cleared after use
+// or after the next move. Mirrors the shape folder:undoMoveBatch expects.
+type UndoEntry = { trackId: number; oldFilepath?: string; newFilepath?: string; oldFolderId: number | null }
 
 // ── FolderRow: droppable + draggable folder node ──────────────────────────────
 function FolderRow({
@@ -20,13 +25,21 @@ function FolderRow({
   depth,
   expanded,
   onToggle,
+  onSelect,
+  isActive,
   isOver,
+  trackCount,
+  hasMissing,
 }: {
   folder: FolderNode
   depth: number
   expanded: boolean
   onToggle: () => void
+  onSelect: () => void
+  isActive: boolean
   isOver: boolean
+  trackCount: number
+  hasMissing: boolean
 }): React.JSX.Element {
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `folder-${folder.id}`,
@@ -58,14 +71,19 @@ function FolderRow({
     <>
       <div
         ref={setRef}
-        className={`fhv-folder-row${isOver ? ' fhv-drop-over' : ''}${isDragging ? ' fhv-dragging' : ''}`}
+        className={`fhv-folder-row${isOver ? ' fhv-drop-over' : ''}${isDragging ? ' fhv-dragging' : ''}${isActive ? ' fhv-folder-active' : ''}`}
         style={{ paddingLeft: 12 + depth * 16 }}
-        onClick={onToggle}
+        onClick={onSelect}
         onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
         {...attributes}
         {...listeners}
       >
-        <span className="fhv-folder-arrow">{expanded ? '▾' : '▸'}</span>
+        <span
+          className="fhv-folder-arrow"
+          onClick={(e) => { e.stopPropagation(); onToggle() }}
+        >
+          {expanded ? '▾' : '▸'}
+        </span>
         {renaming ? (
           <input
             ref={renameInputRef}
@@ -83,6 +101,13 @@ function FolderRow({
         ) : (
           <span className="fhv-folder-name">{folder.name}</span>
         )}
+        {!folder.path && (
+          <span className="fhv-folder-nopath" title="No known disk location — dropping tracks here only reorganizes them in CrateCloud, the file stays put">○</span>
+        )}
+        {hasMissing && (
+          <span className="fhv-folder-missing" title="Contains a track CrateCloud can't find on disk — see Settings → Rescan Library">⚠</span>
+        )}
+        {trackCount > 0 && <span className="fhv-folder-count">{trackCount}</span>}
       </div>
 
       {ctxMenu && (
@@ -160,12 +185,20 @@ function FolderSubtree({
   allTracks,
   depth,
   activeDropId,
+  activeFolderId,
+  onSelectFolder,
+  trackCountByFolder,
+  subtreeHasMissing,
 }: {
   folder: FolderNode
   allFolders: FolderNode[]
   allTracks: Track[]
   depth: number
   activeDropId: string | null
+  activeFolderId: number | null
+  onSelectFolder: (id: number) => void
+  trackCountByFolder: Map<number, number>
+  subtreeHasMissing: Map<number, boolean>
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(true)
   const isOver = activeDropId === `folder-drop-${folder.id}`
@@ -179,7 +212,11 @@ function FolderSubtree({
         depth={depth}
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
+        onSelect={() => onSelectFolder(folder.id)}
+        isActive={activeFolderId === folder.id}
         isOver={isOver}
+        trackCount={trackCountByFolder.get(folder.id) ?? 0}
+        hasMissing={subtreeHasMissing.get(folder.id) ?? false}
       />
       {expanded && (
         <div>
@@ -191,6 +228,10 @@ function FolderSubtree({
               allTracks={allTracks}
               depth={depth + 1}
               activeDropId={activeDropId}
+              activeFolderId={activeFolderId}
+              onSelectFolder={onSelectFolder}
+              trackCountByFolder={trackCountByFolder}
+              subtreeHasMissing={subtreeHasMissing}
             />
           ))}
           {tracks.map((t) => <TrackRow key={t.id} track={t} depth={depth + 1} />)}
@@ -203,11 +244,14 @@ function FolderSubtree({
 // ── Main view ─────────────────────────────────────────────────────────────────
 export function FolderHierarchyView(): React.JSX.Element {
   const { folders, createFolder, moveFolder } = useFolderStore()
-  const { allTracks, setTrackFolder } = useLibraryStore()
+  const { allTracks, setTrackFolder, selected, activeFolderId, setActiveFolder } = useLibraryStore()
   const tracks = allTracks()
 
   const [activeDropId, setActiveDropId] = useState<string | null>(null)
   const [activeDragLabel, setActiveDragLabel] = useState<string | null>(null)
+  const [moving, setMoving] = useState(false)
+  const [moveResults, setMoveResults] = useState<MoveResult[] | null>(null)
+  const [lastMoveBatch, setLastMoveBatch] = useState<UndoEntry[] | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -215,6 +259,35 @@ export function FolderHierarchyView(): React.JSX.Element {
 
   const roots = folders.filter((f) => f.parent_folder_id === null)
   const unassigned = tracks.filter((t) => t.folder_id == null)
+
+  // Direct track count per folder, and whether a folder or any descendant
+  // has a track marked missing_since — computed once per render, O(folders + tracks).
+  const trackCountByFolder = new Map<number, number>()
+  const directMissingByFolder = new Map<number, boolean>()
+  for (const t of tracks) {
+    if (t.folder_id == null) continue
+    trackCountByFolder.set(t.folder_id, (trackCountByFolder.get(t.folder_id) ?? 0) + 1)
+    if (t.missing_since) directMissingByFolder.set(t.folder_id, true)
+  }
+  const childrenByParent = new Map<number | null, FolderNode[]>()
+  for (const f of folders) {
+    const key = f.parent_folder_id
+    if (!childrenByParent.has(key)) childrenByParent.set(key, [])
+    childrenByParent.get(key)!.push(f)
+  }
+  const subtreeHasMissing = new Map<number, boolean>()
+  const computeSubtreeMissing = (folder: FolderNode): boolean => {
+    if (subtreeHasMissing.has(folder.id)) return subtreeHasMissing.get(folder.id)!
+    const children = childrenByParent.get(folder.id) ?? []
+    const result = !!directMissingByFolder.get(folder.id) || children.some(computeSubtreeMissing)
+    subtreeHasMissing.set(folder.id, result)
+    return result
+  }
+  folders.forEach(computeSubtreeMissing)
+
+  const handleSelectFolder = (id: number) => {
+    setActiveFolder(activeFolderId === id ? null : id)
+  }
 
   const handleDragOver = (e: DragOverEvent) => {
     setActiveDropId(e.over ? String(e.over.id) : null)
@@ -234,11 +307,62 @@ export function FolderHierarchyView(): React.JSX.Element {
       const targetId = dropData.folderId
       if (targetId === null || targetId === drag.id) return
       moveFolder(drag.id, targetId)
-    } else if (drag.type === 'track') {
-      const targetFolderId = dropData.folderId ?? null
-      if (drag.currentFolderId === (targetFolderId ?? undefined)) return
-      setTrackFolder(drag.id, targetFolderId)
+      return
     }
+
+    const targetFolderId = dropData.folderId
+    if (drag.currentFolderId === (targetFolderId ?? undefined)) return
+
+    // "Unassigned" isn't a real directory — dropping there is always a
+    // logical-only reassignment, never a file move (mirrors targetFolderId===null).
+    if (targetFolderId === null) {
+      setTrackFolder(drag.id, null)
+      return
+    }
+
+    // Known-identity move: this is CrateCloud initiating the move itself, so
+    // there's no ambiguity to resolve — never routes through
+    // library:rescanFolder's size/duration/partial_hash matching.
+    const trackIds = selected.has(drag.id) && selected.size > 1 ? [...selected] : [drag.id]
+    const draggedTracks = tracks.filter((t) => trackIds.includes(t.id))
+
+    setMoving(true)
+    window.api.folders.moveTracksToFolder(trackIds, targetFolderId).then(async (results) => {
+      setMoving(false)
+      const byId = new Map(draggedTracks.map((t) => [t.id, t]))
+      setMoveResults(
+        results.map((r) => ({
+          track: byId.get(r.trackId) ?? ({ id: r.trackId, title: 'Unknown track' } as Track),
+          success: r.success,
+          newPath: r.newFilepath,
+          error: r.error,
+        }))
+      )
+      const undoable = results
+        .filter((r) => r.success)
+        .map((r) => ({ trackId: r.trackId, oldFilepath: r.oldFilepath, newFilepath: r.newFilepath, oldFolderId: r.oldFolderId ?? null }))
+      setLastMoveBatch(undoable.length ? undoable : null)
+      await useLibraryStore.getState().initFromDb()
+    })
+  }
+
+  const handleUndo = () => {
+    if (!lastMoveBatch) return
+    setMoving(true)
+    window.api.folders.undoMoveBatch(lastMoveBatch).then(async (results) => {
+      setMoving(false)
+      const byId = new Map(tracks.map((t) => [t.id, t]))
+      setMoveResults(
+        results.map((r) => ({
+          track: byId.get(r.trackId) ?? ({ id: r.trackId, title: 'Unknown track' } as Track),
+          success: r.success,
+          newPath: r.newFilepath,
+          error: r.error,
+        }))
+      )
+      setLastMoveBatch(null)
+      await useLibraryStore.getState().initFromDb()
+    })
   }
 
   const handleDragStart = (e: { active: { data: { current?: DragData } } }) => {
@@ -248,8 +372,9 @@ export function FolderHierarchyView(): React.JSX.Element {
       const f = folders.find((x) => x.id === drag.id)
       setActiveDragLabel(f?.name ?? '')
     } else {
+      const multi = selected.has(drag.id) && selected.size > 1
       const t = tracks.find((x) => x.id === drag.id)
-      setActiveDragLabel(t?.title ?? '')
+      setActiveDragLabel(multi ? `${selected.size} tracks` : t?.title ?? '')
     }
   }
 
@@ -264,13 +389,20 @@ export function FolderHierarchyView(): React.JSX.Element {
       <div className="fhv-root">
         <div className="fhv-toolbar">
           <span className="fhv-heading">Folder Hierarchy</span>
-          <button
-            className="fhv-new-btn"
-            onClick={() => createFolder('New Folder', null)}
-            title="Create a new top-level folder"
-          >
-            + New Folder
-          </button>
+          <span style={{ display: 'flex', gap: 8 }}>
+            {lastMoveBatch && (
+              <button className="fhv-new-btn" onClick={handleUndo} disabled={moving} title="Undo the last move">
+                ↶ Undo move
+              </button>
+            )}
+            <button
+              className="fhv-new-btn"
+              onClick={() => createFolder('New Folder', null)}
+              title="Create a new top-level folder"
+            >
+              + New Folder
+            </button>
+          </span>
         </div>
 
         <div className="fhv-tree">
@@ -288,6 +420,10 @@ export function FolderHierarchyView(): React.JSX.Element {
               allTracks={tracks}
               depth={0}
               activeDropId={activeDropId}
+              activeFolderId={activeFolderId}
+              onSelectFolder={handleSelectFolder}
+              trackCountByFolder={trackCountByFolder}
+              subtreeHasMissing={subtreeHasMissing}
             />
           ))}
 
@@ -300,6 +436,10 @@ export function FolderHierarchyView(): React.JSX.Element {
           <div className="fhv-drag-ghost">{activeDragLabel}</div>
         )}
       </DragOverlay>
+
+      {moveResults !== null && (
+        <MoveProgressModal results={moveResults} onClose={() => setMoveResults(null)} />
+      )}
     </DndContext>
   )
 }
