@@ -47,19 +47,28 @@ export type ProgressEvent = {
   file: string
 }
 
-function getSidecarPaths(): { python: string; analyzeScript: string | null; editScript: string | null } {
+// Dev: the raw venv interpreter + script (sidecar/build.sh isn't involved).
+// Prod: two standalone PyInstaller executables built by sidecar/build.sh and
+// bundled via electron-builder's extraResources into resources/sidecar/ —
+// each one IS the interpreter+script combined, so there's no script path to
+// pass, just the file's own args.
+function getSidecarPaths(): { analyzeCmd: string; analyzeArgs: string[]; editCmd: string; editArgs: string[] } {
   if (is.dev) {
     const root = app.getAppPath()
+    const python = join(root, 'sidecar/.venv/bin/python3')
     return {
-      python: join(root, 'sidecar/.venv/bin/python3'),
-      analyzeScript: join(root, 'sidecar/analyze.py'),
-      editScript: join(root, 'sidecar/edit_tags.py'),
+      analyzeCmd: python,
+      analyzeArgs: [join(root, 'sidecar/analyze.py')],
+      editCmd: python,
+      editArgs: [join(root, 'sidecar/edit_tags.py')],
     }
   }
+  const ext = process.platform === 'win32' ? '.exe' : ''
   return {
-    python: join(process.resourcesPath, 'sidecar'),
-    analyzeScript: null,
-    editScript: null,
+    analyzeCmd: join(process.resourcesPath, 'sidecar', `analyze${ext}`),
+    analyzeArgs: [],
+    editCmd: join(process.resourcesPath, 'sidecar', `edit_tags${ext}`),
+    editArgs: [],
   }
 }
 
@@ -103,12 +112,10 @@ export async function editTags(
   meta: EditTagsMeta,
   writeSerato = true
 ): Promise<EditTagsResult> {
-  const { python, editScript } = getSidecarPaths()
-  const args = editScript
-    ? [editScript, filepath, '--meta', JSON.stringify(meta)]
-    : [filepath, '--meta', JSON.stringify(meta)]
+  const { editCmd, editArgs } = getSidecarPaths()
+  const args = [...editArgs, filepath, '--meta', JSON.stringify(meta)]
   if (!writeSerato) args.push('--no-serato')
-  const stdout = await runScript(python, args)
+  const stdout = await runScript(editCmd, args)
   return JSON.parse(stdout) as EditTagsResult
 }
 
@@ -123,9 +130,9 @@ export type ProbeResult = {
 // Cheap header-only size+duration check — no audio decode. Used only as a
 // match signal during orphan reconciliation, never for tagging/analysis.
 export async function probeFile(filepath: string): Promise<ProbeResult> {
-  const { python, analyzeScript } = getSidecarPaths()
-  const args = analyzeScript ? [analyzeScript, filepath, '--probe'] : [filepath, '--probe']
-  const stdout = await runScript(python, args)
+  const { analyzeCmd, analyzeArgs } = getSidecarPaths()
+  const args = [...analyzeArgs, filepath, '--probe']
+  const stdout = await runScript(analyzeCmd, args)
   return JSON.parse(stdout) as ProbeResult
 }
 
@@ -134,11 +141,11 @@ export function analyzeFile(
   options: { writeBack?: boolean; onProgress?: (msg: ProgressEvent) => void } = {}
 ): Promise<AnalysisResult> {
   return new Promise((resolve, reject) => {
-    const { python, analyzeScript } = getSidecarPaths()
-    const args = analyzeScript ? [analyzeScript, filepath] : [filepath]
+    const { analyzeCmd, analyzeArgs } = getSidecarPaths()
+    const args = [...analyzeArgs, filepath]
     if (options.writeBack) args.push('--write-back')
 
-    const child = spawn(python, args, {
+    const child = spawn(analyzeCmd, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

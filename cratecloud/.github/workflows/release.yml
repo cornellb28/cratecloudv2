@@ -1,0 +1,74 @@
+name: Release
+
+# Push a tag like v1.0.1 to build + publish installers for all three
+# platforms to a GitHub Release. Stable-channel only — no beta workflow.
+'on':
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # required to create/upload release assets
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            build-script: build:mac
+          - os: windows-latest
+            build-script: build:win
+          - os: ubuntu-latest
+            build-script: build:linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build sidecar Python venv
+        working-directory: sidecar
+        shell: bash
+        run: |
+          python3 -m venv .venv
+          if [ -f .venv/bin/pip ]; then PIP=.venv/bin/pip; else PIP=.venv/Scripts/pip.exe; fi
+          "$PIP" install -r requirements.txt
+
+      - name: Build sidecar executables (PyInstaller — native per OS, no cross-compile)
+        working-directory: sidecar
+        shell: bash
+        run: ./build.sh
+
+      # electron-builder reads GH_TOKEN to publish release assets, and
+      # CSC_LINK/CSC_KEY_PASSWORD (its one generic env var pair for whichever
+      # platform is currently building) to sign. Kept as two separate GitHub
+      # secrets per platform for clarity when managing them, mapped to the
+      # generic name here since each matrix job only ever builds one
+      # platform. Any unset var is skipped gracefully (see
+      # electron-builder.yml comments) rather than failing the build, so
+      # this works before certs exist too.
+      - name: Build + publish
+        run: npm run ${{ matrix.build-script }} -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.MAC_CSC_LINK || matrix.os == 'windows-latest' && secrets.WIN_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.MAC_CSC_KEY_PASSWORD || matrix.os == 'windows-latest' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

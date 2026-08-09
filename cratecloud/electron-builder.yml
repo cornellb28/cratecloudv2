@@ -9,32 +9,63 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # The raw sidecar/ source tree (venv with symlinks to system Python,
+  # .py scripts, requirements.txt, build.sh, PyInstaller build/ scratch
+  # dir) never belongs in the app bundle — only the compiled executables
+  # in sidecar/dist do, and those are copied in separately via extraResources.
+  - '!sidecar/**'
 asarUnpack:
   - resources/**
+# The compiled sidecar executables (sidecar/build.sh output) — must exist as
+# real files outside app.asar since they're spawned as subprocesses, not
+# read as data. Run sidecar/build.sh natively on each target OS before
+# packaging; PyInstaller doesn't cross-compile.
+extraResources:
+  - from: sidecar/dist
+    to: sidecar
 win:
   executableName: cratecloud
+  # No signing config here on purpose — electron-builder auto-detects a
+  # Windows code signing cert via the CSC_LINK/CSC_KEY_PASSWORD env vars
+  # (set at CI invocation time, see release.yml) with zero yml config
+  # needed. Unset, it just builds an unsigned exe rather than failing.
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  category: public.app-category.music
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  # Notarization requires a hardened runtime — Apple rejects non-hardened builds.
+  hardenedRuntime: true
+  # `true` here doesn't mean "always notarize" — electron-builder's notarize
+  # step (via @electron/notarize) only actually runs if APPLE_ID +
+  # APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID (or an App Store Connect API
+  # key) are present in the environment; it skips gracefully otherwise. Also
+  # requires a Developer ID Application cert to be present for code signing —
+  # without one, this stays an ad-hoc-signed/unsigned local build.
+  notarize: true
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
     - deb
   maintainer: Cornell Benson
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+# GitHub Releases as both the CI publish target and the electron-updater feed.
+# electron-builder bakes this into app-update.yml at build time; electron-updater
+# reads it from there — no separate feed URL to maintain.
+publish:
+  provider: github
+  owner: cornellb28
+  repo: cratecloudv2

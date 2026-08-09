@@ -5,6 +5,8 @@ out
 .eslintcache
 *.log*
 sidecar/.venv/
+sidecar/build/
+sidecar/*.spec
 .env
 .env.local
 !.env.example

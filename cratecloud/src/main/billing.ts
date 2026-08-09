@@ -1,7 +1,45 @@
-import { app, shell } from 'electron'
+import { app, shell, safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
 import jwt from 'jsonwebtoken'
 import { getSetting, setSetting, deleteSetting } from './db'
+
+// The license token used to be stored as plain text in app_settings (a
+// regular SQLite table — trivially readable by anything with disk access).
+// It's now encrypted at rest via Electron's safeStorage (OS keychain on
+// mac, DPAPI on Windows, libsecret on Linux) before hitting that same
+// table. This raises the bar past casual tampering; it's not meant to be
+// unbreakable DRM — the signature check is still what actually matters.
+function storeLicenseToken(token: string): void {
+  if (safeStorage.isEncryptionAvailable()) {
+    setSetting('license_token_enc', safeStorage.encryptString(token).toString('base64'))
+    deleteSetting('license_token') // drop any pre-safeStorage plaintext copy
+  } else {
+    // No OS secret store available (e.g. some headless/minimal Linux
+    // setups with no keyring running) — fall back to plain storage rather
+    // than making activation impossible. Casual-tamper resistance was the
+    // goal, not hard DRM that bricks itself when the OS can't help.
+    setSetting('license_token', token)
+    deleteSetting('license_token_enc')
+  }
+}
+
+function readStoredLicenseToken(): string | null {
+  const encoded = getSetting('license_token_enc')
+  if (encoded) {
+    if (!safeStorage.isEncryptionAvailable()) return null
+    try {
+      return safeStorage.decryptString(Buffer.from(encoded, 'base64'))
+    } catch {
+      return null // undecryptable (e.g. moved to a different machine/keychain) — treat as absent
+    }
+  }
+  return getSetting('license_token') // legacy plaintext, or the no-encryption-available fallback path
+}
+
+function clearStoredLicenseToken(): void {
+  deleteSetting('license_token_enc')
+  deleteSetting('license_token')
+}
 
 export type PlanId = 'pro' | 'corporate'
 export type UserPlan = 'free' | PlanId
@@ -56,7 +94,7 @@ function getDeviceId(): string {
 type LicenseInfo = { plan: UserPlan; seats: number; activatedAt: number | null; licenseKeyMasked: string | null }
 
 function readLicense(): LicenseInfo {
-  const token = getSetting('license_token')
+  const token = readStoredLicenseToken()
   if (!token) return { plan: 'free', seats: 0, activatedAt: null, licenseKeyMasked: null }
   try {
     const claims = jwt.verify(token, LICENSE_PUBLIC_KEY, {
@@ -71,7 +109,7 @@ function readLicense(): LicenseInfo {
     }
   } catch {
     // Corrupt, tampered, or otherwise untrustworthy — never trust a raw token blindly.
-    deleteSetting('license_token')
+    clearStoredLicenseToken()
     return { plan: 'free', seats: 0, activatedAt: null, licenseKeyMasked: null }
   }
 }
@@ -121,12 +159,12 @@ export function activateLicenseKey(rawKey: string): { ok: true; state: BillingSt
   // TODO: once purchases are tracked server-side, reject keys already
   // activated on another device (currently unenforceable — tokens carry no
   // device binding, so the same key can be pasted anywhere).
-  setSetting('license_token', token)
+  storeLicenseToken(token)
   return { ok: true, state: getBillingState() }
 }
 
 export function deactivateLicense(): BillingState {
-  deleteSetting('license_token')
+  clearStoredLicenseToken()
   return getBillingState()
 }
 
@@ -214,7 +252,7 @@ export async function verifyPendingCheckout(
       return { ...getBillingState(), justUnlocked: false }
     }
 
-    setSetting('license_token', data.token)
+    storeLicenseToken(data.token)
     if (pending?.sessionId === sessionId) cancelPendingCheckout()
     return { ...getBillingState(), justUnlocked: true }
   } catch {

@@ -7,6 +7,7 @@ import { createReadStream } from 'fs'
 import * as http from 'http'
 import type { AddressInfo } from 'net'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, probeFile, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import {
@@ -979,6 +980,23 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+
+  // Stable-channel-only auto-update via GitHub Releases (see the `publish`
+  // block in electron-builder.yml — that's the same config this reads at
+  // runtime from the packaged app-update.yml). Dev builds have no
+  // app-update.yml and aren't code-signed, so this only runs when packaged.
+  //
+  // Linux note: this only actually updates the AppImage target — it checks
+  // process.env.APPIMAGE to confirm it's running as one, and downloads +
+  // swaps the file in place, requiring a relaunch. .deb installs are NOT
+  // auto-updatable this way; they're expected to update via apt/the system
+  // package manager instead, same as any other .deb-installed app.
+  if (!is.dev) {
+    autoUpdater.on('error', (err) => console.error('[auto-update] error:', err))
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error('[auto-update] check failed:', err)
+    })
+  }
 })
 
 app.on('window-all-closed', () => {
