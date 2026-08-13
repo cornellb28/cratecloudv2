@@ -154,9 +154,9 @@ const api = {
       ipcRenderer.invoke('folder:getAll'),
     insert: (name: string, parentId: number | null): Promise<number> =>
       ipcRenderer.invoke('folder:insert', name, parentId),
-    rename: (id: number, name: string): Promise<void> =>
+    rename: (id: number, name: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('folder:rename', id, name),
-    move: (id: number, parentId: number | null): Promise<void> =>
+    move: (id: number, parentId: number | null): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('folder:move', id, parentId),
     delete: (id: number): Promise<void> => ipcRenderer.invoke('folder:delete', id),
     updateTrackFolders: (entries: { trackId: number; folderId: number | null }[]): Promise<void> =>

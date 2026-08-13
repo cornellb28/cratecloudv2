@@ -158,8 +158,8 @@ declare global {
       folders: {
         getAll: () => Promise<FolderRow[]>
         insert: (name: string, parentId: number | null) => Promise<number>
-        rename: (id: number, name: string) => Promise<void>
-        move: (id: number, parentId: number | null) => Promise<void>
+        rename: (id: number, name: string) => Promise<{ success: boolean; error?: string }>
+        move: (id: number, parentId: number | null) => Promise<{ success: boolean; error?: string }>
         delete: (id: number) => Promise<void>
         updateTrackFolders: (entries: { trackId: number; folderId: number | null }[]) => Promise<void>
         ensureTree: (rootAbsolutePath: string, relativeDirs: string[]) => Promise<Record<string, number>>

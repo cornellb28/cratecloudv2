@@ -52,14 +52,24 @@ function FolderRow({
 
   const [renaming, setRenaming] = useState(false)
   const [renameVal, setRenameVal] = useState(folder.name)
+  const [renameError, setRenameError] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const { renameFolder, deleteFolder } = useFolderStore()
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
   const commitRename = async () => {
     const trimmed = renameVal.trim()
-    if (trimmed && trimmed !== folder.name) await renameFolder(folder.id, trimmed)
-    setRenaming(false)
+    if (!trimmed || trimmed === folder.name) { setRenaming(false); return }
+    try {
+      await renameFolder(folder.id, trimmed)
+      setRenaming(false)
+    } catch (err) {
+      // Real disk rename can fail (permission, collision, cross-device) —
+      // keep the input open with the attempted value so the user can retry
+      // rather than silently reverting.
+      setRenameError(err instanceof Error ? err.message : String(err))
+      setTimeout(() => setRenameError(null), 4000)
+    }
   }
 
   const setRef = (el: HTMLElement | null) => {
@@ -109,6 +119,12 @@ function FolderRow({
         )}
         {trackCount > 0 && <span className="fhv-folder-count">{trackCount}</span>}
       </div>
+
+      {renameError && (
+        <div className="fhv-folder-row" style={{ paddingLeft: 12 + depth * 16 }}>
+          <span className="fhv-rename-error">{renameError}</span>
+        </div>
+      )}
 
       {ctxMenu && (
         <div
@@ -252,6 +268,7 @@ export function FolderHierarchyView(): React.JSX.Element {
   const [moving, setMoving] = useState(false)
   const [moveResults, setMoveResults] = useState<MoveResult[] | null>(null)
   const [lastMoveBatch, setLastMoveBatch] = useState<UndoEntry[] | null>(null)
+  const [folderMoveError, setFolderMoveError] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -306,7 +323,10 @@ export function FolderHierarchyView(): React.JSX.Element {
     if (drag.type === 'folder') {
       const targetId = dropData.folderId
       if (targetId === null || targetId === drag.id) return
-      moveFolder(drag.id, targetId)
+      moveFolder(drag.id, targetId).catch((err) => {
+        setFolderMoveError(err instanceof Error ? err.message : String(err))
+        setTimeout(() => setFolderMoveError(null), 5000)
+      })
       return
     }
 
@@ -404,6 +424,13 @@ export function FolderHierarchyView(): React.JSX.Element {
             </button>
           </span>
         </div>
+
+        {folderMoveError && (
+          <div className="fhv-move-error">
+            <span>{folderMoveError}</span>
+            <button onClick={() => setFolderMoveError(null)} type="button">✕</button>
+          </div>
+        )}
 
         <div className="fhv-tree">
           {roots.length === 0 && unassigned.length === 0 && (

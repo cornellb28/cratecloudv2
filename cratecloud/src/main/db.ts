@@ -400,11 +400,14 @@ export function updateTrackFields(id: number, fields: Record<string, unknown>): 
   const keys = Object.keys(fields)
   if (!keys.length) return
   // Sanitize: SQLite3 only accepts null/number/string/bigint/Buffer.
-  // undefined → null; arrays/objects (e.g. waveform: number[]) → JSON string.
+  // undefined → null; arrays/objects (e.g. waveform: number[]) → JSON string;
+  // booleans (e.g. status_is_manual on a full Track object passed straight
+  // through from a form) → 0/1 — better-sqlite3 rejects raw JS booleans.
   const safe: Record<string, unknown> = {}
   for (const k of keys) {
     const v = fields[k]
     if (v === undefined) safe[k] = null
+    else if (typeof v === 'boolean') safe[k] = v ? 1 : 0
     else if (Array.isArray(v) || (typeof v === 'object' && v !== null)) safe[k] = JSON.stringify(v)
     else safe[k] = v
   }
@@ -602,12 +605,56 @@ export function insertFolder(name: string, parentId: number | null): number {
   )
 }
 
-export function renameFolder(id: number, name: string): void {
-  db().prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id)
+// Describes a real on-disk directory move already performed by the caller
+// (index.ts) — folderId's own path went from `old` to `new`. Used to cascade
+// the same change into every nested folder's path and every track's
+// filepath underneath it, and into library_roots.path when folderId is a
+// registered root's anchor. libraryRootIdToSync should be that root's id
+// (captured by the caller BEFORE any parent_folder_id change, since a move
+// can simultaneously un-root a folder), or null if not applicable.
+type FolderPathCascade = { old: string; new: string; libraryRootIdToSync: number | null }
+
+function cascadeFolderPaths(d: Database.Database, cascade: FolderPathCascade): void {
+  const prefix = cascade.old + '/'
+  const folders = d.prepare('SELECT id, path FROM folders').all() as { id: number; path: string | null }[]
+  const updateFolderPath = d.prepare('UPDATE folders SET path = ? WHERE id = ?')
+  for (const f of folders) {
+    if (!f.path) continue
+    if (f.path === cascade.old) updateFolderPath.run(cascade.new, f.id)
+    else if (f.path.startsWith(prefix)) updateFolderPath.run(cascade.new + f.path.slice(cascade.old.length), f.id)
+  }
+  const tracks = d.prepare('SELECT id, filepath FROM tracks WHERE filepath IS NOT NULL').all() as
+    { id: number; filepath: string }[]
+  const updateTrackPath = d.prepare('UPDATE tracks SET filepath = ? WHERE id = ?')
+  for (const t of tracks) {
+    if (t.filepath === cascade.old) updateTrackPath.run(cascade.new, t.id)
+    else if (t.filepath.startsWith(prefix)) updateTrackPath.run(cascade.new + t.filepath.slice(cascade.old.length), t.id)
+  }
+  if (cascade.libraryRootIdToSync != null) {
+    d.prepare('UPDATE library_roots SET path = ? WHERE id = ?').run(cascade.new, cascade.libraryRootIdToSync)
+  }
 }
 
-export function updateFolderParent(id: number, parentId: number | null): void {
-  db().prepare('UPDATE folders SET parent_folder_id = ? WHERE id = ?').run(parentId ?? null, id)
+// Renames a folder's DB row and, if pathChange is given (the caller already
+// renamed the real directory on disk), cascades that into every nested
+// folder/track path — all in one transaction so DB and disk never disagree
+// partway through.
+export function renameFolderWithCascade(id: number, name: string, pathChange: FolderPathCascade | null): void {
+  const d = db()
+  d.transaction(() => {
+    d.prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id)
+    if (pathChange) cascadeFolderPaths(d, pathChange)
+  })()
+}
+
+// Reparents a folder's DB row and, if pathChange is given (the caller
+// already moved the real directory on disk), cascades that the same way.
+export function moveFolderWithCascade(id: number, parentId: number | null, pathChange: FolderPathCascade | null): void {
+  const d = db()
+  d.transaction(() => {
+    d.prepare('UPDATE folders SET parent_folder_id = ? WHERE id = ?').run(parentId ?? null, id)
+    if (pathChange) cascadeFolderPaths(d, pathChange)
+  })()
 }
 
 export function deleteFolder(id: number): void {

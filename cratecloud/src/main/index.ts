@@ -32,7 +32,7 @@ import {
   getSetlistTrackIds, addSetlistTrack, removeSetlistTrack,
   reorderSetlistTracks, getSetlistFilepaths,
   getBookmarks, insertBookmark, deleteBookmark, updateBookmark,
-  getFolders, insertFolder, renameFolder, updateFolderParent, deleteFolder,
+  getFolders, insertFolder, renameFolderWithCascade, moveFolderWithCascade, deleteFolder,
   updateTrackFolderIds, ensureFolderTree,
   getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
   getDismissedDuplicatePairs, addDismissedDuplicatePair,
@@ -218,6 +218,106 @@ async function moveFileToFolder(fromPath: string, toFolder: string): Promise<str
   return toPath
 }
 
+export type FolderMutationResult = { success: boolean; error?: string }
+
+// Renames the real on-disk directory for a folder (if it has a known path)
+// and cascades the resulting path change into every nested folder and
+// track. Folders with no known disk location (manually created, or
+// imported before the path column existed) get a logical-only rename —
+// matches the existing path:null convention documented on FolderRow.
+async function renameFolderOnDisk(id: number, newName: string): Promise<FolderMutationResult> {
+  const trimmed = newName.trim()
+  if (!trimmed) return { success: false, error: 'Folder name cannot be empty' }
+
+  const folder = getFolders().find((f) => f.id === id)
+  if (!folder) return { success: false, error: 'Folder no longer exists' }
+
+  if (!folder.path) {
+    renameFolderWithCascade(id, trimmed, null)
+    return { success: true }
+  }
+
+  const newPath = join(dirname(folder.path), trimmed)
+  if (newPath === folder.path) {
+    renameFolderWithCascade(id, trimmed, null) // e.g. whitespace-only change
+    return { success: true }
+  }
+
+  try {
+    await stat(newPath)
+    return { success: false, error: `A folder named "${trimmed}" already exists here` }
+  } catch { /* doesn't exist — clear to proceed */ }
+
+  try {
+    await rename(folder.path, newPath)
+  } catch (err) {
+    return { success: false, error: describeFsError(err) }
+  }
+
+  const libraryRootIdToSync =
+    folder.root_folder_id != null && folder.parent_folder_id === null ? folder.root_folder_id : null
+  renameFolderWithCascade(id, trimmed, { old: folder.path, new: newPath, libraryRootIdToSync })
+  return { success: true }
+}
+
+// Moves the real on-disk directory for a folder under a new parent's
+// directory (if both have a known path) and cascades the path change the
+// same way. A missing path on either side falls back to a logical-only
+// reassignment, since there's nowhere concrete on disk to move to/from.
+async function moveFolderOnDisk(id: number, parentId: number | null): Promise<FolderMutationResult> {
+  if (parentId === null) {
+    moveFolderWithCascade(id, null, null)
+    return { success: true }
+  }
+
+  const folders = getFolders()
+  const folder = folders.find((f) => f.id === id)
+  const target = folders.find((f) => f.id === parentId)
+  if (!folder) return { success: false, error: 'Folder no longer exists' }
+  if (!target) return { success: false, error: 'Target folder no longer exists' }
+  if (id === parentId) return { success: false, error: 'Cannot move a folder into itself' }
+
+  // Server-side cycle guard — the renderer already checks this before
+  // calling, but this handler now performs a real filesystem move, so it's
+  // re-checked here rather than trusted blindly.
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  for (
+    let cur: typeof target | undefined = target;
+    cur;
+    cur = cur.parent_folder_id != null ? byId.get(cur.parent_folder_id) : undefined
+  ) {
+    if (cur.id === id) return { success: false, error: 'Cannot move a folder into its own descendant' }
+  }
+
+  if (!folder.path || !target.path) {
+    moveFolderWithCascade(id, parentId, null)
+    return { success: true }
+  }
+
+  const folderName = basename(folder.path)
+  const newPath = join(target.path, folderName)
+  if (newPath === folder.path) {
+    moveFolderWithCascade(id, parentId, null)
+    return { success: true }
+  }
+
+  try {
+    await stat(newPath)
+    return { success: false, error: `A folder named "${folderName}" already exists there` }
+  } catch { /* doesn't exist — clear to proceed */ }
+
+  try {
+    await rename(folder.path, newPath)
+  } catch (err) {
+    return { success: false, error: describeFsError(err) }
+  }
+
+  const libraryRootIdToSync =
+    folder.root_folder_id != null && folder.parent_folder_id === null ? folder.root_folder_id : null
+  moveFolderWithCascade(id, parentId, { old: folder.path, new: newPath, libraryRootIdToSync })
+  return { success: true }
+}
+
 export type FolderMoveResult = {
   trackId: number
   success: boolean
@@ -258,6 +358,8 @@ function describeFsError(err: unknown): string {
     case 'EROFS': return 'Destination is read-only'
     case 'ENOSPC': return 'Not enough disk space at destination'
     case 'ENOTDIR': return 'Destination is not a folder'
+    case 'EEXIST': return 'A file or folder with that name already exists there'
+    case 'EXDEV': return 'Can\'t move across drives automatically — move the folder in Finder, then use Rescan Library'
     default: return err instanceof Error ? err.message : String(err)
   }
 }
@@ -955,9 +1057,9 @@ app.whenReady().then(() => {
   ipcMain.handle('folder:insert', (_e, name: string, parentId: number | null) =>
     insertFolder(name, parentId)
   )
-  ipcMain.handle('folder:rename', (_e, id: number, name: string) => renameFolder(id, name))
+  ipcMain.handle('folder:rename', (_e, id: number, name: string) => renameFolderOnDisk(id, name))
   ipcMain.handle('folder:move', (_e, id: number, parentId: number | null) =>
-    updateFolderParent(id, parentId)
+    moveFolderOnDisk(id, parentId)
   )
   ipcMain.handle('folder:delete', (_e, id: number) => deleteFolder(id))
   ipcMain.handle(

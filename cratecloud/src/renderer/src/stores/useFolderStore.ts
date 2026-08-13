@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useLibraryStore } from './useLibraryStore'
 
 export type FolderNode = {
   id: number
@@ -39,19 +40,22 @@ export const useFolderStore = create<FolderState>((set, get) => ({
   },
 
   renameFolder: async (id, name) => {
-    await window.api.folders.rename(id, name)
-    set((s) => ({
-      folders: s.folders.map((f) => (f.id === id ? { ...f, name } : f)),
-    }))
+    const result = await window.api.folders.rename(id, name)
+    if (!result.success) throw new Error(result.error ?? 'Rename failed')
+    // A rename with a known disk path can cascade path/filepath changes
+    // across every nested folder and track — re-sync both from the DB
+    // rather than trying to surgically patch local state for a cascade.
+    await get().init()
+    await useLibraryStore.getState().initFromDb()
   },
 
   moveFolder: async (id, newParentId) => {
     // Cycle guard: refuse to move a folder into its own descendant
     if (newParentId !== null && get().isDescendantOf(newParentId, id)) return
-    await window.api.folders.move(id, newParentId)
-    set((s) => ({
-      folders: s.folders.map((f) => (f.id === id ? { ...f, parent_folder_id: newParentId } : f)),
-    }))
+    const result = await window.api.folders.move(id, newParentId)
+    if (!result.success) throw new Error(result.error ?? 'Move failed')
+    await get().init()
+    await useLibraryStore.getState().initFromDb()
   },
 
   deleteFolder: async (id) => {
