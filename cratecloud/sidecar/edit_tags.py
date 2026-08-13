@@ -70,13 +70,16 @@ def edit_mp3(filepath, meta, write_serato):
     raw.save()
 
     # Serato autotags
+    actually_wrote_serato = False
     if write_serato and HAS_SERATO and meta.get('bpm') is not None:
         try:
             at = TrackAutotags(filepath)
             at.set(bpm=float(meta['bpm']))
             at.save()
+            actually_wrote_serato = True
         except Exception:
             pass  # non-fatal
+    return actually_wrote_serato
 
 
 def edit_flac(filepath, meta, write_serato):
@@ -107,13 +110,16 @@ def edit_flac(filepath, meta, write_serato):
         audio['organization'] = [meta['label']]
     audio.save()
 
+    actually_wrote_serato = False
     if write_serato and HAS_SERATO and meta.get('bpm') is not None:
         try:
             at = TrackAutotags(filepath)
             at.set(bpm=float(meta['bpm']))
             at.save()
+            actually_wrote_serato = True
         except Exception:
             pass
+    return actually_wrote_serato
 
 
 def edit_m4a(filepath, meta, _write_serato):
@@ -140,6 +146,7 @@ def edit_m4a(filepath, meta, _write_serato):
     if meta.get('comment') is not None:
         t['\xa9cmt'] = [meta['comment']]
     audio.save()
+    return False  # Serato autotags aren't written for M4A
 
 
 def edit_file(filepath, meta, write_serato=True):
@@ -150,16 +157,17 @@ def edit_file(filepath, meta, write_serato=True):
     if ext not in SUPPORTED:
         return {'success': False, 'error': f'Unsupported format: {ext}', 'filepath': filepath}
 
+    actually_wrote_serato = False
     try:
         if ext == '.mp3':
-            edit_mp3(filepath, meta, write_serato)
+            actually_wrote_serato = edit_mp3(filepath, meta, write_serato)
         elif ext == '.flac':
-            edit_flac(filepath, meta, write_serato)
+            actually_wrote_serato = edit_flac(filepath, meta, write_serato)
         elif ext == '.m4a':
-            edit_m4a(filepath, meta, write_serato)
+            actually_wrote_serato = edit_m4a(filepath, meta, write_serato)
         # WAV/AIFF/OGG: write standard tags only if mutagen supports it
         # (skipped for now — they rarely carry editable metadata)
-        return {'success': True, 'filepath': filepath, 'serato_written': write_serato and HAS_SERATO}
+        return {'success': True, 'filepath': filepath, 'serato_written': actually_wrote_serato}
     except Exception as e:
         return {'success': False, 'error': str(e), 'filepath': filepath}
 

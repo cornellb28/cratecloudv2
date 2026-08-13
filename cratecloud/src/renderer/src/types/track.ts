@@ -6,9 +6,9 @@ export type Track = {
   key: string
   genre: string
   energy: string
-  status_is_manual?: boolean  // true = user pinned board; false = auto-computed
-  folder?: string        // basename of the imported folder, for Library grouping
-  folder_id?: number     // FK into folders table — authoritative hierarchy reference
+  status_is_manual?: boolean // true = user pinned board; false = auto-computed
+  folder?: string // basename of the imported folder, for Library grouping
+  folder_id?: number // FK into folders table — authoritative hierarchy reference
   filepath?: string
   camelot?: string
   openkey?: string

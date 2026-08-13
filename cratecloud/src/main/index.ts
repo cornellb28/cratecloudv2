@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
-import { join, extname, basename, relative, dirname } from 'path'
+import { join, extname, basename, relative, dirname, normalize } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile, open } from 'fs/promises'
@@ -8,6 +8,7 @@ import * as http from 'http'
 import type { AddressInfo } from 'net'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
+import { startWatcher, stopWatcher, stopAllWatchers } from './libraryWatcher'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, probeFile, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import {
@@ -37,7 +38,8 @@ import {
   getDismissedDuplicatePairs, addDismissedDuplicatePair,
   relinkTrackFilepath, markTracksMissing,
   getLibraryRoots, deleteLibraryRoot, ensureLibraryRootTree, markLibraryRootScanned,
-  type DbTrackInsert,
+  isKnownTrackFilepath,
+  type DbTrackInsert, type DbTrackRow,
 } from './db'
 
 // ── Billing: cratecloud:// deep link (Stripe Checkout return) ────────────────
@@ -260,6 +262,78 @@ function describeFsError(err: unknown): string {
   }
 }
 
+export type ReconcileCandidate = { filepath: string; size: number; duration: number | null }
+
+// Matches "missing" tracks (known to the DB, no longer found at their stored
+// path) against newly-discovered candidate files by size -> duration probe
+// -> partial_hash, applying relinks/missing-flags directly. Extracted out of
+// library:rescanFolder so the manual rescan handler and (a later pass) the
+// live filesystem watcher's batched events share one matching
+// implementation instead of two that could quietly disagree. Callers own
+// producing the missing-set and candidate-set — this function only decides
+// and applies the matches.
+async function reconcileCandidates(
+  missing: DbTrackRow[],
+  candidates: ReconcileCandidate[]
+): Promise<{ relinked: number; stillMissing: number }> {
+  if (!candidates.length) {
+    markTracksMissing(missing.map((t) => t.id))
+    return { relinked: 0, stillMissing: missing.length }
+  }
+
+  let relinkedCount = 0
+  const stillMissingIds: number[] = []
+
+  for (const track of missing) {
+    const expectedBytes = track.file_size_mb != null ? track.file_size_mb * 1024 * 1024 : null
+    // file_size_mb was rounded to 2dp on import — allow a small tolerance
+    const sizeMatches = expectedBytes == null
+      ? []
+      : candidates.filter((c) => Math.abs(c.size - expectedBytes) < 1024 * 50)
+
+    let matched: ReconcileCandidate | null = null
+
+    if (sizeMatches.length === 1) {
+      matched = sizeMatches[0]
+    } else if (sizeMatches.length > 1) {
+      // Ambiguous on size alone — probe duration (cheap: mutagen header
+      // read, no audio decode) for just the tied candidates.
+      for (const c of sizeMatches) {
+        if (c.duration == null) {
+          const probe = await probeFile(c.filepath)
+          c.duration = probe.success ? (probe.duration_sec ?? null) : null
+        }
+      }
+      const durationMatches = sizeMatches.filter(
+        (c) => c.duration != null && track.duration_sec != null && Math.abs(c.duration - track.duration_sec) < 0.5
+      )
+      if (durationMatches.length === 1) {
+        matched = durationMatches[0]
+      } else if (durationMatches.length > 1 && track.partial_hash) {
+        // Still tied — break with the fingerprint captured at import time.
+        // Only possible for tracks imported after partial_hash existed;
+        // older rows without one simply can't be disambiguated this way.
+        for (const c of durationMatches) {
+          const h = await computePartialHash(c.filepath)
+          if (h && h === track.partial_hash) { matched = c; break }
+        }
+      }
+      // Still ambiguous → fall through and leave it missing rather than guess.
+    }
+
+    if (matched) {
+      candidates.splice(candidates.indexOf(matched), 1) // one file can't resolve two missing tracks
+      relinkTrackFilepath(track.id, matched.filepath)
+      relinkedCount++
+    } else {
+      stillMissingIds.push(track.id)
+    }
+  }
+
+  if (stillMissingIds.length) markTracksMissing(stillMissingIds)
+  return { relinked: relinkedCount, stillMissing: stillMissingIds.length }
+}
+
 async function saveArtwork(filepath: string, b64: string): Promise<string> {
   const artDir = join(app.getPath('userData'), 'artwork')
   await mkdir(artDir, { recursive: true })
@@ -271,9 +345,46 @@ async function saveArtwork(filepath: string, b64: string): Promise<string> {
 
 // Local HTTP server that serves audio files with range-request support.
 // Chromium requires range requests (HTTP 206) to seek in audio/video elements.
+//
+// Loopback-only, but still unauthenticated — anything on the machine that can
+// reach 127.0.0.1:<port> can issue a request, so the path is never trusted as
+// given. Two kinds of paths are legitimate: (1) artwork thumbnails, always a
+// flat file directly inside our own userData/artwork directory, and (2) audio
+// files, which must be the exact, on-record filepath of some track (covers
+// both registered "Import Library" roots and one-off "Add Files" imports).
+// Anything else is refused with 403 before the filesystem is ever touched.
+const ARTWORK_DIR = join(app.getPath('userData'), 'artwork')
+
+function isAllowedServePath(resolvedPath: string): boolean {
+  if (dirname(resolvedPath) === ARTWORK_DIR) return true
+  // Exact match only, never a prefix/containment check — immune to "../"
+  // traversal tricks by construction, unlike a startsWith() root check.
+  return isKnownTrackFilepath(resolvedPath)
+}
+
+// A read stream's 'error' event has no default handler — if a file vanishes
+// mid-stream (drive unplugged, file deleted while playing) an unhandled
+// 'error' event throws and takes down the whole main process. Routing every
+// createReadStream().pipe(res) through here instead keeps that failure
+// scoped to the one request.
+function pipeFileResponse(stream: ReturnType<typeof createReadStream>, res: http.ServerResponse): void {
+  stream.on('error', (err) => {
+    console.error('[audio-server] stream error:', err)
+    if (!res.headersSent) res.writeHead(500)
+    res.end()
+    stream.destroy()
+  })
+  stream.pipe(res)
+}
+
 let _audioPort = 0
 const _audioServer = http.createServer(async (req, res) => {
-  const filePath = decodeURIComponent(req.url!)
+  const filePath = normalize(decodeURIComponent(req.url!))
+
+  if (!isAllowedServePath(filePath)) {
+    res.writeHead(403); res.end(); return
+  }
+
   const mime = AUDIO_MIME[extname(filePath).toLowerCase()] ?? 'audio/mpeg'
 
   let fileSize: number
@@ -294,14 +405,14 @@ const _audioServer = http.createServer(async (req, res) => {
       'Content-Length': end - start + 1,
       'Content-Type': mime,
     })
-    createReadStream(filePath, { start, end }).pipe(res)
+    pipeFileResponse(createReadStream(filePath, { start, end }), res)
   } else {
     res.writeHead(200, {
       'Content-Length': fileSize,
       'Content-Type': mime,
       'Accept-Ranges': 'bytes',
     })
-    createReadStream(filePath).pipe(res)
+    pipeFileResponse(createReadStream(filePath), res)
   }
 })
 _audioServer.on('error', (err) => console.error('[audio-server] error:', err))
@@ -574,6 +685,7 @@ app.whenReady().then(() => {
     flushBatch() // tail end shorter than BATCH_SIZE
 
     markLibraryRootScanned(libraryRootId)
+    startWatcher(libraryRootId, rootPath)
 
     return {
       library_root_id: libraryRootId,
@@ -586,7 +698,10 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('library:getRoots', () => getLibraryRoots())
-  ipcMain.handle('library:deleteRoot', (_e, id: number) => deleteLibraryRoot(id))
+  ipcMain.handle('library:deleteRoot', async (_e, id: number) => {
+    await stopWatcher(id)
+    deleteLibraryRoot(id)
+  })
 
   // ── Library rescan / orphan reconciliation ────────────────────────────────
   // Narrow trigger only: a previously-known track's file no longer resolves
@@ -622,8 +737,7 @@ app.whenReady().then(() => {
 
     // 2. Walk the target folder for audio files not already a known filepath.
     const knownPaths = new Set(tracksWithPath.map((t) => t.filepath as string))
-    type Candidate = { filepath: string; size: number; duration: number | null }
-    const candidates: Candidate[] = []
+    const candidates: ReconcileCandidate[] = []
     async function walk(dir: string): Promise<void> {
       const entries = await readdir(dir, { withFileTypes: true })
       for (const entry of entries) {
@@ -640,64 +754,10 @@ app.whenReady().then(() => {
     }
     await walk(folderPath)
 
-    if (!candidates.length) {
-      markTracksMissing(missing.map((t) => t.id))
-      return { relinked: 0, stillMissing: missing.length }
-    }
-
     // 3. Match each missing track against THIS SCAN's candidates only — never
-    // against the whole disk or whole library, to keep this cheap.
-    let relinkedCount = 0
-    const stillMissingIds: number[] = []
-
-    for (const track of missing) {
-      const expectedBytes = track.file_size_mb != null ? track.file_size_mb * 1024 * 1024 : null
-      // file_size_mb was rounded to 2dp on import — allow a small tolerance
-      const sizeMatches = expectedBytes == null
-        ? []
-        : candidates.filter((c) => Math.abs(c.size - expectedBytes) < 1024 * 50)
-
-      let matched: Candidate | null = null
-
-      if (sizeMatches.length === 1) {
-        matched = sizeMatches[0]
-      } else if (sizeMatches.length > 1) {
-        // Ambiguous on size alone — probe duration (cheap: mutagen header
-        // read, no audio decode) for just the tied candidates.
-        for (const c of sizeMatches) {
-          if (c.duration == null) {
-            const probe = await probeFile(c.filepath)
-            c.duration = probe.success ? (probe.duration_sec ?? null) : null
-          }
-        }
-        const durationMatches = sizeMatches.filter(
-          (c) => c.duration != null && track.duration_sec != null && Math.abs(c.duration - track.duration_sec) < 0.5
-        )
-        if (durationMatches.length === 1) {
-          matched = durationMatches[0]
-        } else if (durationMatches.length > 1 && track.partial_hash) {
-          // Still tied — break with the fingerprint captured at import time.
-          // Only possible for tracks imported after partial_hash existed;
-          // older rows without one simply can't be disambiguated this way.
-          for (const c of durationMatches) {
-            const h = await computePartialHash(c.filepath)
-            if (h && h === track.partial_hash) { matched = c; break }
-          }
-        }
-        // Still ambiguous → fall through and leave it missing rather than guess.
-      }
-
-      if (matched) {
-        candidates.splice(candidates.indexOf(matched), 1) // one file can't resolve two missing tracks
-        relinkTrackFilepath(track.id, matched.filepath)
-        relinkedCount++
-      } else {
-        stillMissingIds.push(track.id)
-      }
-    }
-
-    if (stillMissingIds.length) markTracksMissing(stillMissingIds)
-    return { relinked: relinkedCount, stillMissing: stillMissingIds.length }
+    // against the whole disk or whole library, to keep this cheap. Shared
+    // with the (future) live watcher — see reconcileCandidates above.
+    return reconcileCandidates(missing, candidates)
   })
 
   // ── File dialogs ──────────────────────────────────────────────────────────
@@ -981,6 +1041,15 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 
+  // Live filesystem watching for every registered root that's currently
+  // online — additive to the manual "Rescan Library" flow, not a
+  // replacement (see libraryWatcher.ts). Offline roots are skipped; nothing
+  // yet flips a root back to 'online'/starts its watcher on reconnect —
+  // that's drive-disconnect handling, a later pass.
+  for (const root of getLibraryRoots()) {
+    if (root.status === 'online') startWatcher(root.id, root.path)
+  }
+
   // Stable-channel-only auto-update via GitHub Releases (see the `publish`
   // block in electron-builder.yml — that's the same config this reads at
   // runtime from the packaged app-update.yml). Dev builds have no
@@ -1001,4 +1070,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  stopAllWatchers().catch((err) => console.error('[watcher] cleanup on quit failed:', err))
 })

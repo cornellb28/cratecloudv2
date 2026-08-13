@@ -132,7 +132,7 @@ const api = {
 
   // ── Boards ──────────────────────────────────────────────────────────────────
   board: {
-    getAll: (): Promise<{ id: number; name: string; color: string; position: number; created_at: number }[]> =>
+    getAll: (): Promise<{ id: number; name: string; color: string; position: number; created_at: number; criteria: string | null }[]> =>
       ipcRenderer.invoke('board:getAll'),
     insert: (name: string, color: string, position: number): Promise<number> =>
       ipcRenderer.invoke('board:insert', name, color, position),

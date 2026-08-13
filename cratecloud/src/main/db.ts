@@ -365,6 +365,14 @@ export function getTrackById(id: number): DbTrackRow | undefined {
   return db().prepare('SELECT * FROM tracks WHERE id = ?').get(id) as DbTrackRow | undefined
 }
 
+// Used only by the local audio server (index.ts) to confirm a requested path
+// is a real track's filepath before streaming it — an exact match against
+// idx_tracks_filepath, never a prefix/containment check, so it isn't
+// bypassable with "../" traversal tricks.
+export function isKnownTrackFilepath(filepath: string): boolean {
+  return !!db().prepare('SELECT 1 FROM tracks WHERE filepath = ? LIMIT 1').get(filepath)
+}
+
 export function insertTracks(rows: DbTrackInsert[]): { id: number; inserted: boolean }[] {
   if (!rows.length) return []
   const stmt = db().prepare(`

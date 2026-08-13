@@ -65,7 +65,9 @@ type DbTrackRow = {
   genre: string
   energy: string
   column_name: string
+  status_is_manual: number
   folder: string | null
+  folder_id: number | null
   filepath: string | null
   camelot: string | null
   openkey: string | null
@@ -81,6 +83,14 @@ type DbTrackRow = {
   comment: string | null
   label: string | null
   waveform: string | null
+  artwork_path: string | null
+  created_at: number | null
+  updated_at: number | null
+  last_modified: number | null
+  filename: string | null
+  client_uuid: string | null
+  partial_hash: string | null
+  missing_since: number | null
 }
 
 declare global {
@@ -93,6 +103,8 @@ declare global {
         updateTrack: (id: number, fields: Record<string, unknown>) => Promise<void>
         deleteTracks: (ids: number[]) => Promise<void>
         moveTracks: (ids: number[], column: string) => Promise<void>
+        autoMoveTracks: (ids: number[], column: string) => Promise<void>
+        resetTrackStatus: (id: number) => Promise<void>
       }
       editTags: (
         filepath: string,
@@ -153,6 +165,39 @@ declare global {
         ensureTree: (rootAbsolutePath: string, relativeDirs: string[]) => Promise<Record<string, number>>
         moveTracksToFolder: (trackIds: number[], targetFolderId: number) => Promise<FolderMoveResult[]>
         undoMoveBatch: (entries: UndoMoveEntry[]) => Promise<FolderMoveResult[]>
+      }
+      board: {
+        getAll: () => Promise<{ id: number; name: string; color: string; position: number; created_at: number; criteria: string | null }[]>
+        insert: (name: string, color: string, position: number) => Promise<number>
+        rename: (id: number, oldName: string, newName: string) => Promise<void>
+        updateColor: (id: number, color: string) => Promise<void>
+        reorder: (entries: { id: number; position: number }[]) => Promise<void>
+        delete: (id: number, fallbackName: string) => Promise<void>
+        updateCriteria: (id: number, criteria: string[] | null) => Promise<void>
+      }
+      setlist: {
+        getAll: () => Promise<{ id: number; name: string; created_at: number }[]>
+        getTrackIds: (id: number) => Promise<number[]>
+        create: (name: string) => Promise<number>
+        rename: (id: number, name: string) => Promise<void>
+        delete: (id: number) => Promise<void>
+        addTrack: (setlistId: number, trackId: number) => Promise<void>
+        removeTrack: (setlistId: number, trackId: number) => Promise<void>
+        reorder: (setlistId: number, trackIds: number[]) => Promise<void>
+        exportSerato: (
+          setlistId: number,
+          name: string
+        ) => Promise<{ success: boolean; seratoDetected: boolean; path?: string; error?: string }>
+      }
+      bookmarks: {
+        getAll: () => Promise<{ id: number; url: string; label: string; created_at: number }[]>
+        insert: (url: string, label: string) => Promise<number>
+        delete: (id: number) => Promise<void>
+        update: (id: number, url: string, label: string) => Promise<void>
+        open: (url: string) => Promise<void>
+      }
+      artwork: {
+        pick: (audioFilepath: string) => Promise<string | null>
       }
       window: {
         close: () => void
