@@ -209,6 +209,30 @@ const api = {
     maximize: () => ipcRenderer.send('window:maximize'),
   },
 
+  // ── Library watcher (live filesystem events) ─────────────────────────────
+  watcher: {
+    onTracksRelinked: (callback: (tracks: { id: number; filepath: string }[]) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, tracks: { id: number; filepath: string }[]) => callback(tracks)
+      ipcRenderer.on('watcher:tracksRelinked', handler)
+      return () => ipcRenderer.removeListener('watcher:tracksRelinked', handler)
+    },
+    onTracksMissing: (callback: (ids: number[]) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, ids: number[]) => callback(ids)
+      ipcRenderer.on('watcher:tracksMissing', handler)
+      return () => ipcRenderer.removeListener('watcher:tracksMissing', handler)
+    },
+    onNewFilesDetected: (callback: (info: { count: number; filepaths: string[] }) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, info: { count: number; filepaths: string[] }) => callback(info)
+      ipcRenderer.on('watcher:newFilesDetected', handler)
+      return () => ipcRenderer.removeListener('watcher:newFilesDetected', handler)
+    },
+    onFolderRenamed: (callback: (info: { folderId: number }) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, info: { folderId: number }) => callback(info)
+      ipcRenderer.on('watcher:folderRenamed', handler)
+      return () => ipcRenderer.removeListener('watcher:folderRenamed', handler)
+    },
+  },
+
   // ── Billing ──────────────────────────────────────────────────────────────
   billing: {
     getState: (): Promise<BillingState> => ipcRenderer.invoke('billing:getState'),

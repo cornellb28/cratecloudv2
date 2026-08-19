@@ -18,7 +18,7 @@ const FREE_BOARD_LIMIT = 2
 // customStatuses mirrors unlimitedBoards: boards ARE the status columns,
 // there's no separate status entity in this app.
 const PRO_GATED: ReadonlySet<FeatureKey> = new Set<FeatureKey>([
-  'trackMatch',
+  // 'trackMatch', // TEMP: unlocked for local testing — restore before commit
   'duplicateDetection',
   'bulkEdit',
   'seratoImport',

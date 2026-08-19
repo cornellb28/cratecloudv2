@@ -204,6 +204,12 @@ declare global {
         minimize: () => void
         maximize: () => void
       }
+      watcher: {
+        onTracksRelinked: (callback: (tracks: { id: number; filepath: string }[]) => void) => () => void
+        onTracksMissing: (callback: (ids: number[]) => void) => () => void
+        onNewFilesDetected: (callback: (info: { count: number; filepaths: string[] }) => void) => () => void
+        onFolderRenamed: (callback: (info: { folderId: number }) => void) => () => void
+      }
       billing: {
         getState: () => Promise<BillingState>
         startCheckout: (
