@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import { matchesTrack, DEFAULT_ADVANCED_FILTERS } from '../utils/searchFilter'
-import { findMatches, hasMatchableData, type MatchResult } from '../utils/trackMatch'
+import {
+  findMatches, hasMatchableData, loadMatchWeights, saveMatchWeights,
+  type MatchResult, type MatchWeights,
+} from '../utils/trackMatch'
 import type { Track } from '../types/track'
 
 function scoreClass(score: number): string {
@@ -25,6 +28,18 @@ export function TrackMatchView(): React.JSX.Element {
   )
   const [pickerQuery, setPickerQuery] = useState('')
 
+  // Power-user tuning, not the headline UI — persisted so a DJ's preferred
+  // balance survives across sessions instead of resetting every launch.
+  const [weights, setWeights] = useState<MatchWeights>(() => loadMatchWeights())
+
+  const updateWeight = (key: keyof MatchWeights, value: number): void => {
+    setWeights((prev) => {
+      const next = { ...prev, [key]: value }
+      saveMatchWeights(next)
+      return next
+    })
+  }
+
   const sourceTrack = useMemo<Track | null>(
     () => (sourceId != null ? tracks.find((t) => t.id === sourceId) ?? null : null),
     [sourceId, tracks]
@@ -32,8 +47,8 @@ export function TrackMatchView(): React.JSX.Element {
 
   const { matches, excludedCount } = useMemo(() => {
     if (!sourceTrack || !hasMatchableData(sourceTrack)) return { matches: [] as MatchResult[], excludedCount: 0 }
-    return findMatches(sourceTrack, tracks)
-  }, [sourceTrack, tracks])
+    return findMatches(sourceTrack, tracks, weights)
+  }, [sourceTrack, tracks, weights])
 
   // Local to this view — deliberately not the shared Library `selected` Set,
   // which means something different (library-wide bulk actions) and would
@@ -200,6 +215,46 @@ export function TrackMatchView(): React.JSX.Element {
           {excludedCount} track{excludedCount === 1 ? '' : 's'} excluded — missing BPM, key, or energy data.
         </div>
       )}
+
+      <div className="tm-weights">
+        <div className="tm-weights-label">Match weighting</div>
+        <div className="tm-weight-row">
+          <span className="tm-weight-name">Key</span>
+          <input
+            className="tm-weight-slider"
+            type="range"
+            min={0}
+            max={100}
+            value={weights.camelot}
+            onChange={(e) => updateWeight('camelot', Number(e.target.value))}
+          />
+          <span className="tm-weight-value">{weights.camelot}</span>
+        </div>
+        <div className="tm-weight-row">
+          <span className="tm-weight-name">BPM</span>
+          <input
+            className="tm-weight-slider"
+            type="range"
+            min={0}
+            max={100}
+            value={weights.bpm}
+            onChange={(e) => updateWeight('bpm', Number(e.target.value))}
+          />
+          <span className="tm-weight-value">{weights.bpm}</span>
+        </div>
+        <div className="tm-weight-row">
+          <span className="tm-weight-name">Energy</span>
+          <input
+            className="tm-weight-slider"
+            type="range"
+            min={0}
+            max={100}
+            value={weights.energy}
+            onChange={(e) => updateWeight('energy', Number(e.target.value))}
+          />
+          <span className="tm-weight-value">{weights.energy}</span>
+        </div>
+      </div>
 
       {matchSelected.size > 0 && (
         <div className="bulk-bar tm-selection-bar">

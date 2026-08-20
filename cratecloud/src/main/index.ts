@@ -3,13 +3,14 @@ import { join, extname, basename, relative, dirname, normalize } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile } from 'fs/promises'
-import { createReadStream } from 'fs'
+import { createReadStream, writeFileSync } from 'fs'
 import * as http from 'http'
 import type { AddressInfo } from 'net'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { startWatcher, stopWatcher, stopAllWatchers } from './libraryWatcher'
 import { computePartialHash, getLastModified, reconcileCandidates, type ReconcileCandidate } from './reconcile'
+import { generateRekordboxXML, generateAllSeratoM3U, type ExportTrack, type ExportCrate } from './export'
 import icon from '../../resources/icon.png?asset'
 import { analyzeFile, editTags, type AnalysisResult, type EditTagsMeta } from './audioSidecar'
 import {
@@ -896,6 +897,54 @@ app.whenReady().then(() => {
       return { success: false, seratoDetected: true, error: String(err) }
     }
   })
+
+  // ── Export (Rekordbox XML / Serato M3U) ─────────────────────────────────────
+  // Library/crate-wide export — distinct from setlist:exportSerato above,
+  // which writes a single binary .crate for one setlist directly into a
+  // detected Serato install. This is the DJ manually choosing a save
+  // location (Rekordbox) or a USB/folder to drop plain-text playlists into
+  // (Serato), so it doesn't try to locate a Serato install at all.
+  ipcMain.handle(
+    'export:rekordbox',
+    async (event, payload: { tracks: ExportTrack[]; crates: ExportCrate[] }) => {
+      try {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        const result = await dialog.showSaveDialog(win!, {
+          title: 'Export Rekordbox XML',
+          defaultPath: 'rekordbox_library.xml',
+          filters: [{ name: 'XML', extensions: ['xml'] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+        const xml = generateRekordboxXML(payload.tracks, payload.crates)
+        writeFileSync(result.filePath, xml, 'utf-8')
+        return { ok: true, path: result.filePath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'export:serato',
+    async (event, payload: { tracks: ExportTrack[]; crates: ExportCrate[] }) => {
+      try {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        const result = await dialog.showOpenDialog(win!, {
+          title: 'Choose export folder for Serato playlists',
+          properties: ['openDirectory', 'createDirectory'],
+        })
+        if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true }
+        const folder = result.filePaths[0]
+        const files = generateAllSeratoM3U(payload.tracks, payload.crates)
+        for (const [filename, content] of files) {
+          writeFileSync(join(folder, filename), content, 'utf-8')
+        }
+        return { ok: true, path: folder, count: files.size }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
 
   // ── Window controls ───────────────────────────────────────────────────────
   ipcMain.on('window:close', (event) => {

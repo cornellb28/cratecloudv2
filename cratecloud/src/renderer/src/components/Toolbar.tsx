@@ -4,6 +4,7 @@ import { countActiveFilters, type AdvancedFilters } from '../utils/searchFilter'
 import { TAG_FIELD_LABELS, type TagField } from '../stores/useTagStore'
 import { BoardSettingsModal } from './board/BoardSettingsModal'
 import { DuplicatesModal } from './DuplicatesModal'
+import { ExportModal } from './ExportModal'
 import { LockBadge } from './LockBadge'
 import { usePlanLimits } from '../hooks/usePlanLimits'
 
@@ -41,6 +42,7 @@ export function Toolbar(): React.JSX.Element {
   const [hintOpen, setHintOpen] = useState(false)
   const [boardSettingsOpen, setBoardSettingsOpen] = useState(false)
   const [duplicatesOpen, setDuplicatesOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const hintRef = useRef<HTMLDivElement>(null)
 
   const adv = advancedFilters
@@ -171,10 +173,19 @@ export function Toolbar(): React.JSX.Element {
             ⧉ Duplicates
           </button>
         </LockBadge>
+
+        <button
+          className="vbtn"
+          onClick={() => setExportOpen(true)}
+          title="Export library to Rekordbox XML or Serato M3U playlists"
+        >
+          ⇩ Export
+        </button>
       </div>
 
       {boardSettingsOpen && <BoardSettingsModal onClose={() => setBoardSettingsOpen(false)} />}
       {duplicatesOpen && <DuplicatesModal onClose={() => setDuplicatesOpen(false)} />}
+      {exportOpen && <ExportModal onClose={() => setExportOpen(false)} />}
 
       {/* ── Advanced filter panel ── */}
       {advOpen && (

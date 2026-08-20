@@ -67,8 +67,61 @@ export function energyScore(energyA: number, energyB: number): number {
   return Math.max(0, Math.round(100 - 8 * delta * delta))
 }
 
-export function combineScores(camelot: number, bpm: number, energy: number): number {
-  return Math.round(camelot * 0.45 + bpm * 0.35 + energy * 0.2)
+export type MatchWeights = { camelot: number; bpm: number; energy: number }
+
+// Matches the algorithm's long-standing 45/35/20 balance — changing this
+// changes results for everyone who's never touched the sliders, so it stays
+// pinned to what combineScores always used, not the newer 50/30/20 split
+// floated for the from-scratch spec.
+export const DEFAULT_MATCH_WEIGHTS: MatchWeights = { camelot: 45, bpm: 35, energy: 20 }
+
+const MATCH_WEIGHTS_STORAGE_KEY = 'cratecloud_match_weights'
+
+function isFiniteNonNegative(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0
+}
+
+export function loadMatchWeights(): MatchWeights {
+  try {
+    const raw = localStorage.getItem(MATCH_WEIGHTS_STORAGE_KEY)
+    if (!raw) return DEFAULT_MATCH_WEIGHTS
+    const parsed = JSON.parse(raw) as Partial<MatchWeights>
+    if (
+      isFiniteNonNegative(parsed.camelot) &&
+      isFiniteNonNegative(parsed.bpm) &&
+      isFiniteNonNegative(parsed.energy) &&
+      parsed.camelot + parsed.bpm + parsed.energy > 0
+    ) {
+      return { camelot: parsed.camelot, bpm: parsed.bpm, energy: parsed.energy }
+    }
+    return DEFAULT_MATCH_WEIGHTS
+  } catch {
+    return DEFAULT_MATCH_WEIGHTS
+  }
+}
+
+export function saveMatchWeights(weights: MatchWeights): void {
+  try {
+    localStorage.setItem(MATCH_WEIGHTS_STORAGE_KEY, JSON.stringify(weights))
+  } catch {
+    // best-effort — a private-browsing/quota failure just means weights
+    // don't persist this session, not worth surfacing to the DJ
+  }
+}
+
+// Weights don't need to sum to 100 — normalized here so a slider tweak (e.g.
+// key=80, bpm=60, energy=20) behaves the same as the equivalent proportion.
+export function combineScores(
+  camelot: number,
+  bpm: number,
+  energy: number,
+  weights: MatchWeights = DEFAULT_MATCH_WEIGHTS
+): number {
+  const total = weights.camelot + weights.bpm + weights.energy
+  if (total <= 0) return Math.round(camelot * 0.45 + bpm * 0.35 + energy * 0.2)
+  return Math.round(
+    (camelot * weights.camelot + bpm * weights.bpm + energy * weights.energy) / total
+  )
 }
 
 export type MatchResult = {
@@ -90,7 +143,11 @@ export function hasMatchableData(track: Track): boolean {
   )
 }
 
-export function scoreTrackPair(source: Track, candidate: Track): MatchResult | null {
+export function scoreTrackPair(
+  source: Track,
+  candidate: Track,
+  weights: MatchWeights = DEFAULT_MATCH_WEIGHTS
+): MatchResult | null {
   const srcCamelot = parseCamelot(source.camelot)
   const srcBpm = parseBpm(source.bpm)
   const srcEnergy = parseEnergy(source.energy)
@@ -105,19 +162,20 @@ export function scoreTrackPair(source: Track, candidate: Track): MatchResult | n
   const bpm = bpmScore(srcBpm, candBpm)
   const energy = energyScore(srcEnergy, candEnergy)
 
-  return { track: candidate, score: combineScores(camelot, bpm, energy), camelot, bpm, energy }
+  return { track: candidate, score: combineScores(camelot, bpm, energy, weights), camelot, bpm, energy }
 }
 
 export function findMatches(
   source: Track,
-  candidates: Track[]
+  candidates: Track[],
+  weights: MatchWeights = DEFAULT_MATCH_WEIGHTS
 ): { matches: MatchResult[]; excludedCount: number } {
   let excludedCount = 0
   const matches: MatchResult[] = []
 
   for (const candidate of candidates) {
     if (candidate.id === source.id) continue
-    const result = scoreTrackPair(source, candidate)
+    const result = scoreTrackPair(source, candidate, weights)
     if (result) matches.push(result)
     else excludedCount++
   }

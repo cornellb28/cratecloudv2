@@ -4,6 +4,10 @@ import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
 import type { BillingState } from '../main/billing'
 import type { FolderMoveResult, UndoMoveEntry, ScanResult, ScanProgress } from '../main/index'
 import type { LibraryRootRow } from '../main/db'
+import type { ExportTrack, ExportCrate } from '../main/export'
+
+type ExportPayload = { tracks: ExportTrack[]; crates: ExportCrate[] }
+type ExportResult = { ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }
 
 const api = {
   // ── Audio analysis ─────────────────────────────────────────────────────
@@ -207,6 +211,14 @@ const api = {
     close: () => ipcRenderer.send('window:close'),
     minimize: () => ipcRenderer.send('window:minimize'),
     maximize: () => ipcRenderer.send('window:maximize'),
+  },
+
+  // ── Export (Rekordbox XML / Serato M3U) ─────────────────────────────────
+  export: {
+    rekordbox: (payload: ExportPayload): Promise<ExportResult> =>
+      ipcRenderer.invoke('export:rekordbox', payload),
+    serato: (payload: ExportPayload): Promise<ExportResult> =>
+      ipcRenderer.invoke('export:serato', payload),
   },
 
   // ── Library watcher (live filesystem events) ─────────────────────────────

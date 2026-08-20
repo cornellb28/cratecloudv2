@@ -1,6 +1,20 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
 import type { BillingState } from '../main/billing'
+import type { ExportTrack, ExportCrate } from '../main/export'
+
+interface ExportPayload {
+  tracks: ExportTrack[]
+  crates: ExportCrate[]
+}
+
+interface ExportResult {
+  ok: boolean
+  canceled?: boolean
+  path?: string
+  count?: number
+  error?: string
+}
 
 type FolderRow = {
   id: number
@@ -203,6 +217,10 @@ declare global {
         close: () => void
         minimize: () => void
         maximize: () => void
+      }
+      export: {
+        rekordbox: (payload: ExportPayload) => Promise<ExportResult>
+        serato: (payload: ExportPayload) => Promise<ExportResult>
       }
       watcher: {
         onTracksRelinked: (callback: (tracks: { id: number; filepath: string }[]) => void) => () => void
