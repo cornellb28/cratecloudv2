@@ -77,8 +77,17 @@ export async function reconcileCandidates(
       // read, no audio decode) for just the tied candidates.
       for (const c of sizeMatches) {
         if (c.duration == null) {
-          const probe = await probeFile(c.filepath)
-          c.duration = probe.success ? (probe.duration_sec ?? null) : null
+          // probeFile spawns a subprocess and its promise rejects on spawn
+          // failure (EMFILE, missing sidecar binary, etc.) — one candidate
+          // failing to probe should fall back to "can't disambiguate this
+          // way" for that candidate, not blow up the whole reconcile pass.
+          try {
+            const probe = await probeFile(c.filepath)
+            c.duration = probe.success ? (probe.duration_sec ?? null) : null
+          } catch (err) {
+            console.error('[reconcile] probeFile failed:', err)
+            c.duration = null
+          }
         }
       }
       const durationMatches = sizeMatches.filter(

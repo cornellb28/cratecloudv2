@@ -201,6 +201,14 @@ async function flush(rootId: number): Promise<void> {
         sendToRenderer('watcher:newFilesDetected', { count: insertedPaths.length, filepaths: insertedPaths })
       }
     }
+  } catch (err) {
+    // flush() is invoked via `void flush(rootId)` from setTimeout callbacks
+    // (see scheduleFlush/the "still reconciling" retry below) — void does
+    // NOT handle promise rejections, so anything thrown here without this
+    // catch becomes an unhandled rejection, which Electron's main process
+    // treats as fatal and crashes the whole app over what should be one
+    // recoverable failed flush cycle (e.g. a transient spawn EMFILE).
+    console.error(`[watcher:${rootId}] flush failed:`, err)
   } finally {
     entry.reconciling = false
   }
