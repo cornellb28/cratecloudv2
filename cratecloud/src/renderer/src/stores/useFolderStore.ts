@@ -15,6 +15,9 @@ type FolderState = {
   folders: FolderNode[]
   init: () => Promise<void>
   createFolder: (name: string, parentId: number | null) => Promise<number>
+  // Like createFolder, but backed by a real directory the DJ picks/creates
+  // via the native folder dialog — returns null if they cancel the dialog.
+  createFolderOnDisk: (parentId: number | null) => Promise<number | null>
   renameFolder: (id: number, name: string) => Promise<void>
   moveFolder: (id: number, newParentId: number | null) => Promise<void>
   deleteFolder: (id: number) => Promise<void>
@@ -35,6 +38,17 @@ export const useFolderStore = create<FolderState>((set, get) => ({
     const id = await window.api.folders.insert(name, parentId)
     set((s) => ({
       folders: [...s.folders, { id, name, parent_folder_id: parentId, created_at: Math.floor(Date.now() / 1000), path: null }],
+    }))
+    return id
+  },
+
+  createFolderOnDisk: async (parentId) => {
+    const result = await window.api.folders.createOnDisk(parentId)
+    if (result.canceled) return null
+    if (!result.success) throw new Error(result.error ?? 'Could not create folder')
+    const { id, name, path } = result as { id: number; name: string; path: string }
+    set((s) => ({
+      folders: [...s.folders, { id, name, parent_folder_id: parentId, created_at: Math.floor(Date.now() / 1000), path }],
     }))
     return id
   },

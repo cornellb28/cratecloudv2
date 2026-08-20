@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useLibraryStore } from './stores/useLibraryStore'
+import { useLibraryStore, rowToTrack } from './stores/useLibraryStore'
 import { useTagStore } from './stores/useTagStore'
 import { useFolderStore } from './stores/useFolderStore'
 import { ContextMenuProvider } from './contexts/ContextMenuContext'
@@ -27,7 +27,7 @@ import { usePlanLimits } from './hooks/usePlanLimits'
 const NO_SIDEBAR_TABS = ['Setlist', 'Artist', 'Settings', 'Track Match']
 
 function AppInner(): React.JSX.Element {
-  const { activeTab, activeView, initFromDb, setAudioPort } = useLibraryStore()
+  const { activeTab, activeView, initFromDb, setAudioPort, appendTrack } = useLibraryStore()
   const { init: initTags } = useTagStore()
   const { init: initFolders } = useFolderStore()
   const { isLocked } = usePlanLimits()
@@ -37,6 +37,15 @@ function AppInner(): React.JSX.Element {
     initTags()
     initFolders()
     window.api.audio.serverPort().then(setAudioPort)
+
+    // The watcher only tells us which filepaths appeared (it already
+    // inserted their rows server-side) — fetch just those rows and reflect
+    // them locally rather than reloading the whole library.
+    const unsubscribeNewFiles = window.api.watcher.onNewFilesDetected(async ({ filepaths }) => {
+      const rows = await window.api.db.tracksByFilepaths(filepaths)
+      rows.forEach((row) => appendTrack(rowToTrack(row)))
+    })
+    return unsubscribeNewFiles
   }, [])
 
   return (

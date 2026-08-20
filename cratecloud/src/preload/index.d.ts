@@ -115,6 +115,7 @@ declare global {
         getTracks: () => Promise<DbTrackRow[]>
         tracksPaginated: (offset: number, limit: number) => Promise<DbTrackRow[]>
         tracksCount: () => Promise<number>
+        tracksByFilepaths: (filepaths: string[]) => Promise<DbTrackRow[]>
         insertTracks: (rows: unknown[]) => Promise<{ id: number; inserted: boolean }[]>
         updateTrack: (id: number, fields: Record<string, unknown>) => Promise<void>
         deleteTracks: (ids: number[]) => Promise<void>
@@ -130,6 +131,7 @@ declare global {
       analyzeFile: (filepath: string, writeBack?: boolean) => Promise<AnalysisResult>
       analyzeFolder: (folderPath: string, writeBack?: boolean) => Promise<AnalysisResult[]>
       onAnalyzeProgress: (callback: (progress: ProgressEvent) => void) => () => void
+      onAnalyzeFolderTrack: (callback: (result: AnalysisResult) => void) => () => void
       dialog: {
         openFolder: () => Promise<string | null>
         openFiles: () => Promise<string[]>
@@ -174,6 +176,9 @@ declare global {
       folders: {
         getAll: () => Promise<FolderRow[]>
         insert: (name: string, parentId: number | null) => Promise<number>
+        createOnDisk: (
+          parentId: number | null
+        ) => Promise<{ success: boolean; canceled?: boolean; id?: number; name?: string; path?: string; error?: string }>
         rename: (id: number, name: string) => Promise<{ success: boolean; error?: string }>
         move: (id: number, parentId: number | null) => Promise<{ success: boolean; error?: string }>
         delete: (id: number) => Promise<void>

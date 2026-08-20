@@ -25,7 +25,7 @@ import {
   type PlanId,
 } from './billing'
 import {
-  getAllTracks, getTracksPaginated, getTracksCount,
+  getAllTracks, getTracksPaginated, getTracksCount, getTracksByFilepaths,
   getTrackById, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
   autoMoveTracksToColumn, resetTrackStatusManual, updateBoardCriteria,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
@@ -35,7 +35,7 @@ import {
   getSetlistTrackIds, addSetlistTrack, removeSetlistTrack,
   reorderSetlistTracks, getSetlistFilepaths,
   getBookmarks, insertBookmark, deleteBookmark, updateBookmark,
-  getFolders, insertFolder, renameFolderWithCascade, moveFolderWithCascade, deleteFolder,
+  getFolders, insertFolder, insertFolderAtPath, renameFolderWithCascade, moveFolderWithCascade, deleteFolder,
   updateTrackFolderIds, ensureFolderTree,
   getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
   getDismissedDuplicatePairs, addDismissedDuplicatePair,
@@ -520,6 +520,15 @@ app.whenReady().then(() => {
     const fileEntries: FileEntry[] = []
     await walkAudioFiles(folderPath, fileEntries)
 
+    // Build the folder tree up front (not after analysis, as this handler
+    // used to) so every streamed per-file result below can carry its
+    // resolved folder_id immediately — same idea as library:importRoot.
+    // This is what lets the renderer add each track to the DB/UI as it
+    // finishes analyzing instead of waiting for the whole folder and doing
+    // a single combined batch insert at the end.
+    const relativeDirs = [...new Set(fileEntries.map((f) => f.relative_dir))].filter((d) => d !== '')
+    const folderIdByRelPath = ensureFolderTree(folderPath, relativeDirs)
+
     const total = fileEntries.length
     const results: AnalysisResult[] = new Array(total)
     let nextIdx = 0
@@ -542,6 +551,7 @@ app.whenReady().then(() => {
             r.last_modified = await getLastModified(filepath)
           }
           r.relative_dir = relative_dir
+          r.folder_id = folderIdByRelPath[relative_dir] ?? folderIdByRelPath[''] ?? null
           results[i] = r
         } catch (err) {
           results[i] = { success: false, filepath, relative_dir, error: String(err) }
@@ -552,6 +562,7 @@ app.whenReady().then(() => {
           total,
           file: basename(filepath),
         })
+        if (results[i].success) event.sender.send('analyze-folder-track', results[i])
       }
     })
 
@@ -836,6 +847,9 @@ app.whenReady().then(() => {
     getTracksPaginated(offset, limit)
   )
   ipcMain.handle('db:tracksCount', () => getTracksCount())
+  ipcMain.handle('db:tracksByFilepaths', (_event, filepaths: string[]) =>
+    getTracksByFilepaths(filepaths)
+  )
 
   ipcMain.handle('db:insertTracks', (_event, rows) => insertTracks(rows))
 
@@ -1003,6 +1017,27 @@ app.whenReady().then(() => {
   ipcMain.handle('folder:insert', (_e, name: string, parentId: number | null) =>
     insertFolder(name, parentId)
   )
+  // Lets the DJ pick (or create, via the dialog's own "New Folder" button)
+  // a real on-disk location — unlike folder:insert, this always has a
+  // concrete directory to create/adopt, so the new folder is disk-backed
+  // and shows up in Finder immediately, not just in CrateCloud's DB.
+  ipcMain.handle('folder:createOnDisk', async (event, parentId: number | null) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Choose or create a folder location',
+    })
+    if (result.canceled || !result.filePaths[0]) return { success: false, canceled: true }
+    const chosenPath = result.filePaths[0]
+    try {
+      await mkdir(chosenPath, { recursive: true })
+    } catch (err) {
+      return { success: false, error: describeFsError(err) }
+    }
+    const name = basename(chosenPath)
+    const id = insertFolderAtPath(name, parentId, chosenPath)
+    return { success: true, id, name, path: chosenPath }
+  })
   ipcMain.handle('folder:rename', (_e, id: number, name: string) => renameFolderOnDisk(id, name))
   ipcMain.handle('folder:move', (_e, id: number, parentId: number | null) =>
     moveFolderOnDisk(id, parentId)

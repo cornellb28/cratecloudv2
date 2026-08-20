@@ -259,7 +259,7 @@ function FolderSubtree({
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 export function FolderHierarchyView(): React.JSX.Element {
-  const { folders, createFolder, moveFolder } = useFolderStore()
+  const { folders, createFolderOnDisk, moveFolder } = useFolderStore()
   const { allTracks, setTrackFolder, selected, activeFolderId, setActiveFolder } = useLibraryStore()
   const tracks = allTracks()
 
@@ -385,6 +385,15 @@ export function FolderHierarchyView(): React.JSX.Element {
     })
   }
 
+  const handleNewFolder = async () => {
+    try {
+      await createFolderOnDisk(null)
+    } catch (err) {
+      setFolderMoveError(err instanceof Error ? err.message : String(err))
+      setTimeout(() => setFolderMoveError(null), 5000)
+    }
+  }
+
   const handleDragStart = (e: { active: { data: { current?: DragData } } }) => {
     const drag = e.active.data.current
     if (!drag) return
@@ -417,8 +426,8 @@ export function FolderHierarchyView(): React.JSX.Element {
             )}
             <button
               className="fhv-new-btn"
-              onClick={() => createFolder('New Folder', null)}
-              title="Create a new top-level folder"
+              onClick={() => { void handleNewFolder() }}
+              title="Choose or create a folder on disk"
             >
               + New Folder
             </button>

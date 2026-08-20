@@ -30,12 +30,23 @@ const api = {
     return () => ipcRenderer.removeListener('analyze-progress', handler)
   },
 
+  // Fires once per successfully-analyzed file during analyzeFolder, with the
+  // full result (folder_id already resolved) — lets the renderer add tracks
+  // one at a time as they finish instead of waiting for the whole folder.
+  onAnalyzeFolderTrack: (callback: (result: AnalysisResult) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, result: AnalysisResult) => callback(result)
+    ipcRenderer.on('analyze-folder-track', handler)
+    return () => ipcRenderer.removeListener('analyze-folder-track', handler)
+  },
+
   // ── Database ────────────────────────────────────────────────────────────
   db: {
     getTracks: () => ipcRenderer.invoke('db:getTracks'),
     tracksPaginated: (offset: number, limit: number) =>
       ipcRenderer.invoke('db:tracksPaginated', offset, limit),
     tracksCount: (): Promise<number> => ipcRenderer.invoke('db:tracksCount'),
+    tracksByFilepaths: (filepaths: string[]) =>
+      ipcRenderer.invoke('db:tracksByFilepaths', filepaths),
     insertTracks: (rows: unknown[]) => ipcRenderer.invoke('db:insertTracks', rows),
     updateTrack: (id: number, fields: Record<string, unknown>) =>
       ipcRenderer.invoke('db:updateTrack', id, fields),
@@ -161,6 +172,10 @@ const api = {
       ipcRenderer.invoke('folder:getAll'),
     insert: (name: string, parentId: number | null): Promise<number> =>
       ipcRenderer.invoke('folder:insert', name, parentId),
+    createOnDisk: (
+      parentId: number | null
+    ): Promise<{ success: boolean; canceled?: boolean; id?: number; name?: string; path?: string; error?: string }> =>
+      ipcRenderer.invoke('folder:createOnDisk', parentId),
     rename: (id: number, name: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('folder:rename', id, name),
     move: (id: number, parentId: number | null): Promise<{ success: boolean; error?: string }> =>

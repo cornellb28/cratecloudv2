@@ -380,6 +380,16 @@ export function getTracksCount(): number {
   return row.total
 }
 
+// Used to fetch full rows for tracks the watcher already inserted (it only
+// notifies the renderer with the bare filepaths, not full rows) so the UI
+// can reflect them without a full library reload.
+export function getTracksByFilepaths(filepaths: string[]): DbTrackRow[] {
+  if (!filepaths.length) return []
+  return db()
+    .prepare(`SELECT * FROM tracks WHERE filepath IN (SELECT value FROM json_each(?))`)
+    .all(JSON.stringify(filepaths)) as DbTrackRow[]
+}
+
 // Used only by the local audio server (index.ts) to confirm a requested path
 // is a real track's filepath before streaming it — an exact match against
 // idx_tracks_filepath, never a prefix/containment check, so it isn't
@@ -617,6 +627,18 @@ export function getFolders(): FolderRow[] {
 export function insertFolder(name: string, parentId: number | null): number {
   return Number(
     db().prepare('INSERT INTO folders (name, parent_folder_id) VALUES (?, ?)').run(name, parentId ?? null).lastInsertRowid
+  )
+}
+
+// Like insertFolder, but for a folder backed by a real directory the caller
+// has already created on disk — records its path so it behaves like an
+// imported folder (rename/move cascade to the real directory) instead of
+// the path:null "virtual, disk-less" folders insertFolder produces.
+export function insertFolderAtPath(name: string, parentId: number | null, path: string): number {
+  return Number(
+    db()
+      .prepare('INSERT INTO folders (name, parent_folder_id, path) VALUES (?, ?, ?)')
+      .run(name, parentId ?? null, path).lastInsertRowid
   )
 }
 

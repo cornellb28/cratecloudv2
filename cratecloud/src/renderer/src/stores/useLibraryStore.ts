@@ -86,7 +86,7 @@ const EMPTY_COLUMNS: Record<string, Track[]> = {}
 // getTracks() fetch — keeps large libraries from freezing the UI on load.
 const INITIAL_LOAD_PAGE_SIZE = 100
 
-function rowToTrack(row: DbTrackRow): Track {
+export function rowToTrack(row: DbTrackRow): Track {
   return {
     id: row.id,
     title: row.title,
@@ -167,6 +167,11 @@ type LibraryState = {
   updateTrack: (id: number, updates: Partial<Track>) => void
   setActiveTrack: (track: Track | null, col: string | null) => void
   addTracks: (results: ImportedTrackData[], folderName?: string) => Promise<void>
+  // Local-only reflects for changes the main process already persisted
+  // (watcher-driven) — unlike addTracks/updateTrack, these never call back
+  // into window.api.db, since the DB row already exists/changed server-side.
+  appendTrack: (track: Track) => void
+  markMissing: (id: number) => void
   setSelectedSetlist: (id: string | null) => void
   allTracks: () => Track[]
   removeTrack: (id: number) => void
@@ -497,6 +502,28 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       if (newColumns[dest]) newColumns[dest] = [...newColumns[dest], ...tracks]
     }
     set({ columns: newColumns })
+  },
+
+  appendTrack: (track) => {
+    const { columns, boards } = get()
+    if (Object.values(columns).some((list) => list.some((t) => t.id === track.id))) return // already present
+    const col = boards.length ? computeStatus(track, boards) : 'Untagged'
+    const dest = columns[col] ? col : Object.keys(columns)[0]
+    if (!dest) return // no boards loaded yet — nothing to append into
+    set({ columns: { ...columns, [dest]: [...columns[dest], track] } })
+  },
+
+  markMissing: (id) => {
+    const columns = { ...get().columns }
+    let found = false
+    Object.keys(columns).forEach((col) => {
+      columns[col] = columns[col].map((t) => {
+        if (t.id !== id) return t
+        found = true
+        return { ...t, missing_since: Math.floor(Date.now() / 1000) }
+      })
+    })
+    if (found) set({ columns })
   },
 
   setSelectedSetlist: (id) => set({ selectedSetlistId: id }),

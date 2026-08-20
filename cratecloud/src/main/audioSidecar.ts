@@ -38,6 +38,7 @@ export type AnalysisResult = {
   relative_dir?: string  // set by analyze-folder handler, not the sidecar
   partial_hash?: string | null  // set by the analyze-file/analyze-folder handlers, not the sidecar
   last_modified?: number | null  // real on-disk mtime (epoch seconds), set by the handlers, not the sidecar
+  folder_id?: number | null  // resolved by analyze-folder handler from its up-front ensureFolderTree call
 }
 
 export type ProgressEvent = {

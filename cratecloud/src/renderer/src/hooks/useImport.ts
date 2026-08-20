@@ -42,29 +42,33 @@ export function useImport() {
         for (const folderPath of folders) {
           if (remaining <= 0) { capSkippedFolders++; continue }
           const rootName = folderPath.split('/').pop() ?? folderPath
-          const removeListener = window.api.onAnalyzeProgress((p) => {
+
+          // Tracks now stream in one at a time via onAnalyzeFolderTrack as
+          // each file finishes analyzing (folder_id is already resolved
+          // server-side, from an up-front ensureFolderTree call inside the
+          // analyze-folder handler) — this is what shows tracks appearing
+          // live during a large folder import instead of one batch reveal
+          // at the end. Chained onto addQueue so each DB insert completes
+          // before the next starts, since addTracks reads/writes the store's
+          // columns non-atomically and concurrent calls could race.
+          let addQueue: Promise<void> = Promise.resolve()
+          const removeProgressListener = window.api.onAnalyzeProgress((p) => {
             setImportStatus({ current: p.current, total: p.total, label: p.file })
           })
+          const removeTrackListener = window.api.onAnalyzeFolderTrack((r) => {
+            const isDuplicate = !!r.filepath && knownPaths.has(r.filepath)
+            if (isDuplicate) { skipped++; return }
+            if (remaining <= 0) { capSkipped++; return }
+            remaining--
+            addQueue = addQueue.then(() => addTracks([r], rootName))
+          })
           try {
-            const results = await window.api.analyzeFolder(folderPath)
-            const fresh = results.filter((r) => !r.filepath || !knownPaths.has(r.filepath))
-            skipped += results.length - fresh.length
-            const allowed = fresh.slice(0, remaining)
-            capSkipped += fresh.length - allowed.length
-            remaining -= allowed.length
-            if (allowed.length) {
-              // Build folder tree in DB and map each result to its folder_id
-              const relativeDirs = [...new Set(allowed.map((r) => r.relative_dir ?? ''))]
-              const folderIdMap = await window.api.folders.ensureTree(folderPath, relativeDirs)
-              await reinitFolders()
-              const withFolderIds = allowed.map((r) => ({
-                ...r,
-                folder_id: folderIdMap[r.relative_dir ?? ''] ?? null,
-              }))
-              await addTracks(withFolderIds, rootName)
-            }
+            await window.api.analyzeFolder(folderPath)
+            await addQueue
+            await reinitFolders()
           } finally {
-            removeListener()
+            removeProgressListener()
+            removeTrackListener()
           }
         }
 
