@@ -25,7 +25,8 @@ import {
   type PlanId,
 } from './billing'
 import {
-  getAllTracks, getTrackById, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
+  getAllTracks, getTracksPaginated, getTracksCount,
+  getTrackById, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
   autoMoveTracksToColumn, resetTrackStatusManual, updateBoardCriteria,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
   getAllCrateTrackIds, addTracksToCrate, removeTracksFromCrate,
@@ -830,6 +831,11 @@ app.whenReady().then(() => {
 
   // ── Database ─────────────────────────────────────────────────────────────
   ipcMain.handle('db:getTracks', () => getAllTracks())
+
+  ipcMain.handle('db:tracksPaginated', (_event, offset: number, limit: number) =>
+    getTracksPaginated(offset, limit)
+  )
+  ipcMain.handle('db:tracksCount', () => getTracksCount())
 
   ipcMain.handle('db:insertTracks', (_event, rows) => insertTracks(rows))
 

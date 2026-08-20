@@ -82,6 +82,10 @@ export type DeletePreference = 'ask' | 'remove' | 'trash'
 
 const EMPTY_COLUMNS: Record<string, Track[]> = {}
 
+// initFromDb streams tracks in pages of this size instead of one big
+// getTracks() fetch — keeps large libraries from freezing the UI on load.
+const INITIAL_LOAD_PAGE_SIZE = 100
+
 function rowToTrack(row: DbTrackRow): Track {
   return {
     id: row.id,
@@ -221,8 +225,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   initFromDb: async () => {
     try {
-      const [rows, crateRows, crateTrackRows, boardRows] = await Promise.all([
-        window.api.db.getTracks(),
+      const [total, crateRows, crateTrackRows, boardRows] = await Promise.all([
+        window.api.db.tracksCount(),
         window.api.crate.getAll(),
         window.api.crate.getAllTrackIds(),
         window.api.board.getAll(),
@@ -234,14 +238,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           ...b,
           criteria: b.criteria != null ? (JSON.parse(b.criteria as unknown as string) as string[]) : null,
         }))
-      const columns: Record<string, Track[]> = {}
-      for (const b of sortedBoards) columns[b.name] = []
       const firstBoardName = sortedBoards[0]?.name ?? 'Untagged'
-      rows.forEach((row) => {
-        const track = rowToTrack(row)
-        if (columns[row.column_name]) columns[row.column_name].push(track)
-        else if (columns[firstBoardName]) columns[firstBoardName].push(track)
-      })
+
       // Build crate trackId Sets
       const trackIdsByCrate = new Map<number, Set<number>>()
       for (const { crate_id, track_id } of crateTrackRows) {
@@ -254,10 +252,36 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         color: c.color,
         trackIds: trackIdsByCrate.get(c.id) ?? new Set(),
       }))
-      set({ columns, crates, boards: sortedBoards, dbReady: true })
+
+      // Boards/crates are cheap and ready immediately; tracks stream in below
+      // a page at a time so a large library never lands as one huge
+      // fetch+setState — the DJ watches it populate instead of the UI
+      // freezing on initial load. Each page's own IPC round trip is what
+      // yields to the render loop between batches; no artificial delay needed.
+      const columns: Record<string, Track[]> = {}
+      for (const b of sortedBoards) columns[b.name] = []
+      set({ crates, boards: sortedBoards, columns: { ...columns } })
+
+      let offset = 0
+      while (offset < total) {
+        const rows = await window.api.db.tracksPaginated(offset, INITIAL_LOAD_PAGE_SIZE)
+        if (!rows.length) break // total was stale (rows deleted mid-load) — stop rather than loop forever
+        rows.forEach((row) => {
+          const track = rowToTrack(row)
+          if (columns[row.column_name]) columns[row.column_name].push(track)
+          else if (columns[firstBoardName]) columns[firstBoardName].push(track)
+        })
+        offset += rows.length
+        set({
+          columns: { ...columns },
+          importStatus: offset < total ? { current: offset, total, label: 'Loading library…' } : null,
+        })
+      }
+
+      set({ dbReady: true, importStatus: null })
     } catch (err) {
       console.error('[db] initFromDb failed:', err)
-      set({ dbReady: true })
+      set({ dbReady: true, importStatus: null })
     }
   },
 

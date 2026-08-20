@@ -33,6 +33,9 @@ const api = {
   // ── Database ────────────────────────────────────────────────────────────
   db: {
     getTracks: () => ipcRenderer.invoke('db:getTracks'),
+    tracksPaginated: (offset: number, limit: number) =>
+      ipcRenderer.invoke('db:tracksPaginated', offset, limit),
+    tracksCount: (): Promise<number> => ipcRenderer.invoke('db:tracksCount'),
     insertTracks: (rows: unknown[]) => ipcRenderer.invoke('db:insertTracks', rows),
     updateTrack: (id: number, fields: Record<string, unknown>) =>
       ipcRenderer.invoke('db:updateTrack', id, fields),

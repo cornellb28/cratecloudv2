@@ -365,6 +365,21 @@ export function getTrackById(id: number): DbTrackRow | undefined {
   return db().prepare('SELECT * FROM tracks WHERE id = ?').get(id) as DbTrackRow | undefined
 }
 
+// Same ORDER BY as getAllTracks() (id ascending) so pages concatenate into
+// an identical result to a single getAllTracks() call — the renderer streams
+// this in chunks purely to avoid one huge synchronous fetch/setState on
+// large libraries, not to change what ends up loaded or in what order.
+export function getTracksPaginated(offset: number, limit: number): DbTrackRow[] {
+  return db()
+    .prepare('SELECT * FROM tracks ORDER BY id LIMIT ? OFFSET ?')
+    .all(limit, offset) as DbTrackRow[]
+}
+
+export function getTracksCount(): number {
+  const row = db().prepare('SELECT COUNT(*) as total FROM tracks').get() as { total: number }
+  return row.total
+}
+
 // Used only by the local audio server (index.ts) to confirm a requested path
 // is a real track's filepath before streaming it — an exact match against
 // idx_tracks_filepath, never a prefix/containment check, so it isn't

@@ -113,6 +113,8 @@ declare global {
     api: {
       db: {
         getTracks: () => Promise<DbTrackRow[]>
+        tracksPaginated: (offset: number, limit: number) => Promise<DbTrackRow[]>
+        tracksCount: () => Promise<number>
         insertTracks: (rows: unknown[]) => Promise<{ id: number; inserted: boolean }[]>
         updateTrack: (id: number, fields: Record<string, unknown>) => Promise<void>
         deleteTracks: (ids: number[]) => Promise<void>
