@@ -70,8 +70,8 @@ function TrackPicker({ setlistId, setlistTrackIds, onClose }: {
         </div>
         <div className="sl-picker-search">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="5" stroke="#555" strokeWidth="1.5" />
-            <line x1="11" y1="11" x2="14" y2="14" stroke="#555" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="7" cy="7" r="5" stroke="var(--color-text-disabled)" strokeWidth="1.5" />
+            <line x1="11" y1="11" x2="14" y2="14" stroke="var(--color-text-disabled)" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
           <input
             autoFocus
@@ -232,7 +232,7 @@ function SetlistBulkEditModal({ tracks, onClose }: {
 
         <div className="sl-edit-modal-footer">
           <button className="modal-btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="sl-action-btn accent" onClick={handleSave}>
+          <button className="btn btn-solid" onClick={handleSave}>
             {single ? 'Save' : `Apply to ${tracks.length} tracks`}
           </button>
         </div>
@@ -496,7 +496,7 @@ export function SetlistView(): React.JSX.Element {
               </div>
               <div className="sl-detail-actions">
                 {selectedIds.size > 0 && (
-                  <button className="sl-action-btn" onClick={openEditModal}>
+                  <button className="btn btn-outline" onClick={openEditModal}>
                     ✎ Edit {selectedIds.size}
                   </button>
                 )}
@@ -517,10 +517,10 @@ export function SetlistView(): React.JSX.Element {
                     ⊞
                   </button>
                 </div>
-                <button className="sl-action-btn" onClick={() => setPickerOpen(true)} title="Add tracks from your library">
+                <button className="btn btn-outline" onClick={() => setPickerOpen(true)} title="Add tracks from your library">
                   + Add Tracks
                 </button>
-                <button className="sl-action-btn accent" onClick={() => { void handleExport() }} title="Export as Serato sub-crate">
+                <button className="btn btn-solid" onClick={() => { void handleExport() }} title="Export as Serato sub-crate">
                   ⟱ Serato
                 </button>
                 <button className="sl-delete-btn" onClick={() => { void deleteSetlist(active.id) }} title="Delete playlist">
@@ -539,7 +539,7 @@ export function SetlistView(): React.JSX.Element {
             {setlistTracks.length === 0 ? (
               <div className="sl-tracks-empty">
                 <div>No tracks yet.</div>
-                <button className="sl-action-btn" style={{ marginTop: 12 }} onClick={() => setPickerOpen(true)}>
+                <button className="btn btn-outline" style={{ marginTop: 12 }} onClick={() => setPickerOpen(true)}>
                   + Add Tracks
                 </button>
               </div>

@@ -78,7 +78,7 @@ export function DeleteDialog(): React.JSX.Element | null {
 
         <div className="dialog-actions">
           <button
-            className="dialog-btn"
+            className="btn btn-outline"
             onClick={() => { closeDeleteDialog(); setDontAskAgain(false) }}
           >
             Cancel

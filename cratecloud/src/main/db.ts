@@ -390,6 +390,166 @@ export function getTracksByFilepaths(filepaths: string[]): DbTrackRow[] {
     .all(JSON.stringify(filepaths)) as DbTrackRow[]
 }
 
+// ── Genre / Artist browsing (sidebar) ───────────────────────────────────────
+// missing_since IS NULL is this schema's "not missing" — there is no boolean
+// `missing` column (see markTracksMissing/relinkTrackFilepath above).
+
+export type GenreCount = { genre: string; track_count: number }
+export type ArtistCount = { artist: string; track_count: number }
+
+export function getAllGenres(): GenreCount[] {
+  return db()
+    .prepare(
+      `SELECT genre, COUNT(*) as track_count
+       FROM tracks
+       WHERE genre IS NOT NULL AND genre != ''
+       AND missing_since IS NULL
+       GROUP BY genre
+       ORDER BY genre ASC`
+    )
+    .all() as GenreCount[]
+}
+
+export function getTracksByGenre(genre: string, offset: number, limit: number): DbTrackRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM tracks
+       WHERE genre = ? AND missing_since IS NULL
+       ORDER BY artist ASC, title ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(genre, limit, offset) as DbTrackRow[]
+}
+
+export function getTracksByGenreCount(genre: string): number {
+  const row = db()
+    .prepare(`SELECT COUNT(*) as total FROM tracks WHERE genre = ? AND missing_since IS NULL`)
+    .get(genre) as { total: number }
+  return row.total
+}
+
+// Board view for GenreView — each board column paginates independently
+// (mirrors how the main BoardColumn already gets one array per column).
+export function getTracksByGenreAndColumn(
+  genre: string,
+  column: string,
+  offset: number,
+  limit: number
+): DbTrackRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM tracks
+       WHERE genre = ? AND column_name = ? AND missing_since IS NULL
+       ORDER BY artist ASC, title ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(genre, column, limit, offset) as DbTrackRow[]
+}
+
+export function getTracksByGenreAndColumnCount(genre: string, column: string): number {
+  const row = db()
+    .prepare(
+      `SELECT COUNT(*) as total FROM tracks
+       WHERE genre = ? AND column_name = ? AND missing_since IS NULL`
+    )
+    .get(genre, column) as { total: number }
+  return row.total
+}
+
+export function getAllArtists(): ArtistCount[] {
+  return db()
+    .prepare(
+      `SELECT artist, COUNT(*) as track_count
+       FROM tracks
+       WHERE artist IS NOT NULL AND artist != ''
+       AND missing_since IS NULL
+       GROUP BY artist
+       ORDER BY artist ASC`
+    )
+    .all() as ArtistCount[]
+}
+
+export function getTracksByArtist(artist: string, offset: number, limit: number): DbTrackRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM tracks
+       WHERE artist = ? AND missing_since IS NULL
+       ORDER BY title ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(artist, limit, offset) as DbTrackRow[]
+}
+
+export function getTracksByArtistCount(artist: string): number {
+  const row = db()
+    .prepare(`SELECT COUNT(*) as total FROM tracks WHERE artist = ? AND missing_since IS NULL`)
+    .get(artist) as { total: number }
+  return row.total
+}
+
+// ── Label Manager (genre/artist value cleanup) ──────────────────────────────
+// Field name is interpolated into SQL (no parameterized column names in
+// sqlite) — LABEL_FIELDS is the injection guard, checked before every use.
+// No missing_since filter here, unlike the browsing queries above: renaming
+// a mistyped genre/artist should catch every row that has it, including
+// tracks whose file is currently missing.
+export type LabelValueCount = { value: string; count: number }
+const LABEL_FIELDS = new Set(['genre', 'artist'])
+
+export function getLabelValueCounts(field: string): LabelValueCount[] {
+  if (!LABEL_FIELDS.has(field)) throw new Error(`Invalid label field: ${field}`)
+  return db()
+    .prepare(
+      `SELECT ${field} as value, COUNT(*) as count
+       FROM tracks
+       WHERE ${field} IS NOT NULL AND ${field} != ''
+       GROUP BY ${field}
+       ORDER BY count DESC`
+    )
+    .all() as LabelValueCount[]
+}
+
+export function renameLabelValue(
+  field: string,
+  oldValue: string,
+  newValue: string
+): { ok: boolean; tracksUpdated?: number; error?: string } {
+  if (!LABEL_FIELDS.has(field)) return { ok: false, error: `Invalid field: ${field}` }
+  try {
+    const result = db().prepare(`UPDATE tracks SET ${field} = ? WHERE ${field} = ?`).run(newValue, oldValue)
+    return { ok: true, tracksUpdated: result.changes }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// Board view for ArtistView — mirrors getTracksByGenreAndColumn.
+export function getTracksByArtistAndColumn(
+  artist: string,
+  column: string,
+  offset: number,
+  limit: number
+): DbTrackRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM tracks
+       WHERE artist = ? AND column_name = ? AND missing_since IS NULL
+       ORDER BY title ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(artist, column, limit, offset) as DbTrackRow[]
+}
+
+export function getTracksByArtistAndColumnCount(artist: string, column: string): number {
+  const row = db()
+    .prepare(
+      `SELECT COUNT(*) as total FROM tracks
+       WHERE artist = ? AND column_name = ? AND missing_since IS NULL`
+    )
+    .get(artist, column) as { total: number }
+  return row.total
+}
+
 // Used only by the local audio server (index.ts) to confirm a requested path
 // is a real track's filepath before streaming it — an exact match against
 // idx_tracks_filepath, never a prefix/containment check, so it isn't

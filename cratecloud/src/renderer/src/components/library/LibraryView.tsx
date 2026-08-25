@@ -249,7 +249,8 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
         setExpandedTrackId(null)
         setModalTrack(null)
       }
-      if (e.key === ' ' && !inInput) { e.preventDefault(); usePlayerStore.getState().togglePlayPause() }
+      // Space→togglePlayPause lives in PlayerBar now — it's always mounted,
+      // so a second listener here would double-fire and net out to nothing.
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -261,7 +262,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
   const groups: GroupedTracks[] = Object.entries(columns)
     .map(([col, tracks]) => ({
       name: col,
-      color: boardColorMap[col] ?? COLUMN_COLORS[col] ?? '#555',
+      color: boardColorMap[col] ?? COLUMN_COLORS[col] ?? 'var(--color-text-disabled)',
       tracks: tracks.filter((t) => {
         if (activeCrate && !activeCrate.trackIds.has(t.id)) return false
         if (activeFolderIds && !activeFolderIds.has(t.folder_id ?? -1)) return false
@@ -353,6 +354,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
             const isCurrentlyPlaying = currentTrack?.id === track.id
             const isSelected = selected.has(track.id)
             const board = trackBoardMap.get(track.id)
+            const isMissing = track.missing_since != null
             return (
               <div
                 key={track.id}
@@ -372,6 +374,9 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                     ? <img src={art} className="lib-grid-img" draggable={false} />
                     : <div className="lib-grid-art-empty">♪</div>
                   }
+                  {isMissing && (
+                    <div className="lib-grid-missing-dot" title="File not found on disk" />
+                  )}
                   <div
                     className={`lib-grid-check${isSelected ? ' checked' : ''}`}
                     onPointerDown={(e) => e.stopPropagation()}
@@ -384,11 +389,13 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                     className={`lib-grid-play-btn${isCurrentlyPlaying ? ' visible' : ''}`}
                     onClick={(e) => {
                       e.stopPropagation()
+                      if (isMissing) return
                       if (isCurrentlyPlaying) usePlayerStore.getState().togglePlayPause()
                       else if (track.filepath) playTrack(track)
                     }}
                     type="button"
-                    title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
+                    disabled={isMissing}
+                    title={isMissing ? 'File not found on disk' : (isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play')}
                   >
                     {isCurrentlyPlaying && isPlaying ? '⏸' : '▶'}
                   </button>
@@ -490,6 +497,7 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                 const isActive = activeTrack?.id === track.id
                 const isCurrentlyPlaying = currentTrack?.id === track.id
                 const isExpanded = expandedTrackId === track.id
+                const isMissing = track.missing_since != null
 
                 return (
                   <React.Fragment key={track.id}>
@@ -520,12 +528,18 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                       </td>
                       <td
                         className="lib-td lib-td-num"
-                        onClick={(e) => { e.stopPropagation(); if (isCurrentlyPlaying) togglePlayPause(); else if (track.filepath) playTrack(track) }}
-                        title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (isMissing) return
+                          if (isCurrentlyPlaying) togglePlayPause()
+                          else if (track.filepath) playTrack(track)
+                        }}
+                        title={isMissing ? 'File not found on disk' : (isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play')}
+                        style={isMissing ? { cursor: 'default' } : undefined}
                       >
                         {isCurrentlyPlaying
                           ? <span className="lib-num-playing">{isPlaying ? '⏸' : '▶'}</span>
-                          : <><span className="lib-num-idx">{i + 1}</span><span className="lib-num-play">▶</span></>
+                          : <><span className="lib-num-idx">{i + 1}</span><span className="lib-num-play" style={isMissing ? { opacity: 0.3 } : undefined}>▶</span></>
                         }
                       </td>
                       <td className="lib-td lib-td-art">
@@ -533,7 +547,14 @@ export function LibraryView({ gridMode = false }: { gridMode?: boolean }): React
                           ? <img className="lib-art-thumb" src={artUrl(track)!} draggable={false} />
                           : <div className="lib-art-empty">♪</div>}
                       </td>
-                      <td className="lib-td lib-td-title">{track.title}</td>
+                      <td className="lib-td lib-td-title">
+                        {track.title}
+                        {isMissing && (
+                          <span className="tag missing" style={{ marginLeft: 6 }} title="File not found on disk">
+                            ⚠ Missing
+                          </span>
+                        )}
+                      </td>
                       <td className="lib-td lib-td-artist">{track.artist || <span className="lib-dim">—</span>}</td>
                       <td className="lib-td lib-td-mono">
                         {track.bpm ? <span className="lib-tag bpm">{track.bpm}</span> : <span className="lib-dim">—</span>}

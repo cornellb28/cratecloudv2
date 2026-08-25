@@ -1,6 +1,18 @@
 import { create } from 'zustand'
 import type { Track } from '../types/track'
 
+const VOLUME_STORAGE_KEY = 'cratecloud_player_volume'
+
+function loadInitialVolume(): number {
+  try {
+    const raw = localStorage.getItem(VOLUME_STORAGE_KEY)
+    const n = raw != null ? parseFloat(raw) : NaN
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0.8
+  } catch {
+    return 0.8
+  }
+}
+
 type PlayerState = {
   currentTrack: Track | null
   isPlaying: boolean
@@ -20,7 +32,7 @@ type PlayerState = {
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTrack: null,
   isPlaying: false,
-  volume: 0.8,
+  volume: loadInitialVolume(),
   currentTime: 0,
   duration: 0,
 
@@ -28,7 +40,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setIsPlaying: (v) => set({ isPlaying: v }),
   togglePlay: () => set({ isPlaying: !get().isPlaying }),
   togglePlayPause: () => set({ isPlaying: !get().isPlaying }),
-  setVolume: (v) => set({ volume: v }),
+  setVolume: (v) => {
+    const clamped = Math.max(0, Math.min(1, v))
+    try {
+      localStorage.setItem(VOLUME_STORAGE_KEY, String(clamped))
+    } catch {
+      // private-browsing/quota failure — volume just won't persist this session
+    }
+    set({ volume: clamped })
+  },
   setCurrentTime: (t) => set({ currentTime: t }),
   setDuration: (d) => set({ duration: d }),
 }))

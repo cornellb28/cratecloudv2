@@ -31,20 +31,20 @@ function PlanButton({
 }): React.JSX.Element {
   if (currentPlan === plan) {
     return (
-      <button className="settings-plan-btn owned" disabled>
+      <button className="btn btn-outline" disabled>
         Current plan
       </button>
     )
   }
   if (plan === 'pro' && currentPlan === 'corporate') {
     return (
-      <button className="settings-plan-btn owned" disabled>
+      <button className="btn btn-outline" disabled>
         Included in Corporate
       </button>
     )
   }
   return (
-    <button className="settings-plan-btn" onClick={onSelect} disabled={disabled}>
+    <button className="btn btn-solid" onClick={onSelect} disabled={disabled}>
       Select {PLAN_COPY[plan].title}
     </button>
   )
@@ -162,7 +162,7 @@ export function SettingsView(): React.JSX.Element {
           <div className="settings-plan-title">Free</div>
           <div className="settings-plan-price">$0</div>
           <p className="settings-plan-blurb">Core library, boards, and tagging.</p>
-          <button className="settings-plan-btn owned" disabled>
+          <button className="btn btn-outline" disabled>
             {plan === 'free' ? 'Current plan' : 'Included'}
           </button>
         </div>
@@ -267,7 +267,7 @@ export function SettingsView(): React.JSX.Element {
           </div>
         )}
 
-        <button className="settings-plan-btn" onClick={handleAddLibraryRoot} disabled={scanning}>
+        <button className="btn btn-solid" onClick={handleAddLibraryRoot} disabled={scanning}>
           {scanning ? 'Scanning…' : '+ Import Library…'}
         </button>
 
@@ -292,7 +292,7 @@ export function SettingsView(): React.JSX.Element {
           If files were moved or renamed outside CrateCloud (Finder, Serato, Rekordbox), rescan
           their folder to relink them — tags, crates, and board placement are preserved.
         </p>
-        <button className="settings-plan-btn" onClick={handleRescan} disabled={rescanning}>
+        <button className="btn btn-solid" onClick={handleRescan} disabled={rescanning}>
           {rescanning ? 'Rescanning…' : 'Rescan Library…'}
         </button>
         {rescanStatus && <p className="settings-plan-blurb">{rescanStatus}</p>}
@@ -316,7 +316,7 @@ export function SettingsView(): React.JSX.Element {
                 disabled={loading}
               />
               <button
-                className="settings-plan-btn"
+                className="btn btn-solid"
                 disabled={loading || !licenseInput.trim()}
                 onClick={async () => {
                   const ok = await activateLicense(licenseInput)

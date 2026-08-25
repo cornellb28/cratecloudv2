@@ -208,8 +208,8 @@ export function ExportModal({ onClose }: Props): React.JSX.Element {
         )}
 
         <div className="bem-footer">
-          <button className="bem-btn" onClick={onClose} type="button">Cancel</button>
-          <button className="bem-btn primary" onClick={handleExport} disabled={exportDisabled} type="button">
+          <button className="btn btn-outline" onClick={onClose} type="button">Cancel</button>
+          <button className="btn btn-solid" onClick={handleExport} disabled={exportDisabled} type="button">
             {exporting ? (<><span className="exp-spinner" />Exporting...</>) : 'Export →'}
           </button>
         </div>

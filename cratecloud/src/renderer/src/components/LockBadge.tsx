@@ -34,7 +34,7 @@ export function LockBadge({ locked, featureName, children }: Props): React.JSX.E
           <div className="lock-badge-popover-title">{featureName} is a Pro feature</div>
           <div className="lock-badge-popover-actions">
             <button
-              className="bem-btn primary"
+              className="btn btn-solid"
               onClick={() => {
                 setPromptOpen(false)
                 goToUpgrade()
@@ -42,7 +42,7 @@ export function LockBadge({ locked, featureName, children }: Props): React.JSX.E
             >
               Upgrade to Pro
             </button>
-            <button className="bem-btn" onClick={() => setPromptOpen(false)}>
+            <button className="btn btn-outline" onClick={() => setPromptOpen(false)}>
               Cancel
             </button>
           </div>

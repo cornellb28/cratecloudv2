@@ -78,7 +78,7 @@ export function DuplicatesModal({ onClose }: Props): React.JSX.Element {
             Matches tracks by normalized artist + title. Not audio fingerprinting — review each
             group before deleting anything.
           </p>
-          <button className="bem-btn primary" onClick={runScan} disabled={scanning} type="button">
+          <button className="btn btn-solid" onClick={runScan} disabled={scanning} type="button">
             {scanning ? 'Scanning…' : 'Scan for duplicates'}
           </button>
         </div>
@@ -134,14 +134,14 @@ export function DuplicatesModal({ onClose }: Props): React.JSX.Element {
 
             <div className="dupes-cluster-actions">
               <button
-                className="bem-btn"
+                className="btn btn-outline"
                 onClick={() => dismissCluster(clusterIdx)}
                 type="button"
               >
                 Not a duplicate — dismiss
               </button>
               <button
-                className="bem-btn primary"
+                className="btn btn-danger"
                 onClick={() => deleteOthers(clusterIdx)}
                 disabled={keptByCluster[clusterIdx] == null}
                 type="button"

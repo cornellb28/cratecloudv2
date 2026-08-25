@@ -57,7 +57,7 @@ function FolderRow({
   const { renameFolder, deleteFolder } = useFolderStore()
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
-  const commitRename = async () => {
+  const commitRename = async (): Promise<void> => {
     const trimmed = renameVal.trim()
     if (!trimmed || trimmed === folder.name) { setRenaming(false); return }
     try {
@@ -72,7 +72,7 @@ function FolderRow({
     }
   }
 
-  const setRef = (el: HTMLElement | null) => {
+  const setRef = (el: HTMLElement | null): void => {
     setDragRef(el)
     setDropRef(el)
   }
@@ -258,6 +258,10 @@ function FolderSubtree({
 }
 
 // ── Main view ─────────────────────────────────────────────────────────────────
+// MOBILE TODO: Deep folder nesting breaks on small screens.
+// Replace with a native-style drill-down stack:
+// each folder tap pushes a new full-screen list view.
+// Back button in header navigates up.
 export function FolderHierarchyView(): React.JSX.Element {
   const { folders, createFolderOnDisk, moveFolder } = useFolderStore()
   const { allTracks, setTrackFolder, selected, activeFolderId, setActiveFolder } = useLibraryStore()
@@ -302,15 +306,15 @@ export function FolderHierarchyView(): React.JSX.Element {
   }
   folders.forEach(computeSubtreeMissing)
 
-  const handleSelectFolder = (id: number) => {
+  const handleSelectFolder = (id: number): void => {
     setActiveFolder(activeFolderId === id ? null : id)
   }
 
-  const handleDragOver = (e: DragOverEvent) => {
+  const handleDragOver = (e: DragOverEvent): void => {
     setActiveDropId(e.over ? String(e.over.id) : null)
   }
 
-  const handleDragEnd = (e: DragEndEvent) => {
+  const handleDragEnd = (e: DragEndEvent): void => {
     setActiveDropId(null)
     setActiveDragLabel(null)
     const { active, over } = e
@@ -366,7 +370,7 @@ export function FolderHierarchyView(): React.JSX.Element {
     })
   }
 
-  const handleUndo = () => {
+  const handleUndo = (): void => {
     if (!lastMoveBatch) return
     setMoving(true)
     window.api.folders.undoMoveBatch(lastMoveBatch).then(async (results) => {
@@ -385,7 +389,7 @@ export function FolderHierarchyView(): React.JSX.Element {
     })
   }
 
-  const handleNewFolder = async () => {
+  const handleNewFolder = async (): Promise<void> => {
     try {
       await createFolderOnDisk(null)
     } catch (err) {
@@ -394,7 +398,7 @@ export function FolderHierarchyView(): React.JSX.Element {
     }
   }
 
-  const handleDragStart = (e: { active: { data: { current?: DragData } } }) => {
+  const handleDragStart = (e: { active: { data: { current?: DragData } } }): void => {
     const drag = e.active.data.current
     if (!drag) return
     if (drag.type === 'folder') {
@@ -403,7 +407,7 @@ export function FolderHierarchyView(): React.JSX.Element {
     } else {
       const multi = selected.has(drag.id) && selected.size > 1
       const t = tracks.find((x) => x.id === drag.id)
-      setActiveDragLabel(multi ? `${selected.size} tracks` : t?.title ?? '')
+      setActiveDragLabel(multi ? `${selected.size} tracks` : (t?.title ?? ''))
     }
   }
 
@@ -444,7 +448,7 @@ export function FolderHierarchyView(): React.JSX.Element {
         <div className="fhv-tree">
           {roots.length === 0 && unassigned.length === 0 && (
             <div className="fhv-empty">
-              No folders yet. Import a folder to see its structure here, or click "+ New Folder".
+              No folders yet. Import a folder to see its structure here, or click + New Folder.
             </div>
           )}
 

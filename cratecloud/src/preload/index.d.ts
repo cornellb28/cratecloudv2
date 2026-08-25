@@ -16,6 +16,34 @@ interface ExportResult {
   error?: string
 }
 
+interface GenreCount {
+  genre: string
+  track_count: number
+}
+
+interface ArtistCount {
+  artist: string
+  track_count: number
+}
+
+interface LabelValueCount {
+  value: string
+  count: number
+}
+
+interface RenameResult {
+  ok: boolean
+  newPath?: string
+  newTitle?: string
+  error?: string
+}
+
+interface RelinkResult {
+  ok: boolean
+  newPath?: string
+  error?: string
+}
+
 type FolderRow = {
   id: number
   name: string
@@ -116,12 +144,42 @@ declare global {
         tracksPaginated: (offset: number, limit: number) => Promise<DbTrackRow[]>
         tracksCount: () => Promise<number>
         tracksByFilepaths: (filepaths: string[]) => Promise<DbTrackRow[]>
+        allGenres: () => Promise<GenreCount[]>
+        tracksByGenre: (genre: string, offset: number, limit: number) => Promise<DbTrackRow[]>
+        tracksByGenreCount: (genre: string) => Promise<number>
+        tracksByGenreAndColumn: (
+          genre: string,
+          column: string,
+          offset: number,
+          limit: number
+        ) => Promise<DbTrackRow[]>
+        tracksByGenreAndColumnCount: (genre: string, column: string) => Promise<number>
+        allArtists: () => Promise<ArtistCount[]>
+        tracksByArtist: (artist: string, offset: number, limit: number) => Promise<DbTrackRow[]>
+        tracksByArtistCount: (artist: string) => Promise<number>
+        tracksByArtistAndColumn: (
+          artist: string,
+          column: string,
+          offset: number,
+          limit: number
+        ) => Promise<DbTrackRow[]>
+        tracksByArtistAndColumnCount: (artist: string, column: string) => Promise<number>
+        labelValueCounts: (field: 'genre' | 'artist') => Promise<LabelValueCount[]>
+        renameLabelValue: (
+          field: 'genre' | 'artist',
+          oldValue: string,
+          newValue: string
+        ) => Promise<{ ok: boolean; tracksUpdated?: number; error?: string }>
         insertTracks: (rows: unknown[]) => Promise<{ id: number; inserted: boolean }[]>
         updateTrack: (id: number, fields: Record<string, unknown>) => Promise<void>
         deleteTracks: (ids: number[]) => Promise<void>
         moveTracks: (ids: number[], column: string) => Promise<void>
         autoMoveTracks: (ids: number[], column: string) => Promise<void>
         resetTrackStatus: (id: number) => Promise<void>
+      }
+      track: {
+        renameFile: (id: number, newName: string) => Promise<RenameResult>
+        relinkFile: (id: number, newFilepath: string) => Promise<RelinkResult>
       }
       editTags: (
         filepath: string,

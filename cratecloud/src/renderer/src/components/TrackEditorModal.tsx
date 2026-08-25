@@ -4,6 +4,8 @@ import type { Track } from '../types/track'
 import { useLibraryStore } from '../stores/useLibraryStore'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import { TagInput } from './TagInput'
+import { ArtistInput } from './ArtistInput'
+import { CamelotKeyPicker } from './CamelotKeyPicker'
 
 function buildTrackMeta(f: Track): Record<string, string | undefined> {
   return {
@@ -22,6 +24,11 @@ function buildTrackMeta(f: Track): Record<string, string | undefined> {
   }
 }
 
+// MOBILE TODO: This is CrateCloud's "Inspector" (see build-order notes) —
+// the centered modal becomes a bottom sheet on mobile.
+// Peek height: 120px (shows title + BPM + key).
+// Full height: 85vh (all fields visible, scrollable).
+// Dismiss: swipe down or tap outside.
 export function TrackEditorModal({ track, onClose }: {
   track: Track
   onClose: () => void
@@ -41,6 +48,7 @@ export function TrackEditorModal({ track, onClose }: {
   const pendingRef = useRef(false)
   const mountedRef = useRef(true)
   const isFirstRender = useRef(true)
+  const skipNextDebounceRef = useRef(false)
 
   useEffect(() => { return () => { mountedRef.current = false } }, [])
 
@@ -48,7 +56,8 @@ export function TrackEditorModal({ track, onClose }: {
     const onKey = (e: KeyboardEvent) => {
       const inInput = (e.target as HTMLElement).closest('input, textarea, [contenteditable]')
       if (e.key === 'Escape' || (e.key === 'c' && !inInput)) onClose()
-      if (e.key === ' ' && !inInput) { e.preventDefault(); togglePlayPause() }
+      // Space→togglePlayPause lives in PlayerBar now — it's always mounted
+      // underneath this modal, so a second listener here would double-fire.
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -56,6 +65,7 @@ export function TrackEditorModal({ track, onClose }: {
 
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
+    if (skipNextDebounceRef.current) { skipNextDebounceRef.current = false; return }
     pendingRef.current = true
     if (debounceRef.current) clearTimeout(debounceRef.current)
     setSaveStatus('pending')
@@ -96,6 +106,26 @@ export function TrackEditorModal({ track, onClose }: {
     const next = { ...formRef.current, [field]: value }
     formRef.current = next
     setForm(next)
+  }
+
+  // Bypasses the normal 1000ms debounce for an explicit user choice (e.g.
+  // picking an artist suggestion) — saves immediately instead.
+  const commitNow = (field: keyof Track, value: string): void => {
+    const next = { ...formRef.current, [field]: value }
+    formRef.current = next
+    skipNextDebounceRef.current = true
+    setForm(next)
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+    pendingRef.current = false
+    setSaveStatus('saving')
+    updateTrack(next.id, next)
+    if (next.filepath) {
+      window.api.editTags(next.filepath, buildTrackMeta(next), true)
+        .then((r) => { if (mountedRef.current) setSaveStatus(r.success ? 'saved' : 'error') })
+        .catch(() => { if (mountedRef.current) setSaveStatus('error') })
+    } else {
+      setSaveStatus('saved')
+    }
   }
 
   const handleArtworkUpload = async () => {
@@ -141,7 +171,11 @@ export function TrackEditorModal({ track, onClose }: {
           </div>
           <div className="ca-field">
             <div className="ca-label">Artist</div>
-            <input className="ca-input" value={form.artist} onChange={(e) => set('artist', e.target.value)} />
+            <ArtistInput
+              value={form.artist}
+              onChange={(v) => set('artist', v)}
+              onCommit={(v) => commitNow('artist', v)}
+            />
           </div>
           <div className="ca-row">
             <div className="ca-field">
@@ -150,7 +184,7 @@ export function TrackEditorModal({ track, onClose }: {
             </div>
             <div className="ca-field">
               <div className="ca-label">Key</div>
-              <input className="ca-input" value={form.key} placeholder="—" onChange={(e) => set('key', e.target.value)} />
+              <CamelotKeyPicker value={form.key} onChange={(v) => commitNow('key', v)} />
             </div>
           </div>
           <div className="ca-field">

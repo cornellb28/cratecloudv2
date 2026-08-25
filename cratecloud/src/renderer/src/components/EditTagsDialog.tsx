@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import { ArtistInput } from './ArtistInput'
+import { TagInput } from './TagInput'
+import { CamelotKeyPicker } from './CamelotKeyPicker'
 
 type FormFields = {
   title: string
@@ -8,6 +11,7 @@ type FormFields = {
   genre: string
   bpm: string
   key: string
+  energy: string
   year: string
   remixer: string
   grouping: string
@@ -20,7 +24,7 @@ export function EditTagsDialog(): React.JSX.Element | null {
   const { editDialog, closeEditDialog, updateTrack } = useLibraryStore()
 
   const [fields, setFields] = useState<FormFields>({
-    title: '', artist: '', album: '', genre: '', bpm: '', key: '', year: '',
+    title: '', artist: '', album: '', genre: '', bpm: '', key: '', energy: '', year: '',
     remixer: '', grouping: '', composer: '', comment: '', label: '',
   })
   const [writeToFile, setWriteToFile] = useState(true)
@@ -38,6 +42,7 @@ export function EditTagsDialog(): React.JSX.Element | null {
         genre: t.genre ?? '',
         bpm: t.bpm ?? '',
         key: t.key ?? '',
+        energy: t.energy ?? '',
         year: t.year ?? '',
         remixer: t.remixer ?? '',
         grouping: t.grouping ?? '',
@@ -58,6 +63,9 @@ export function EditTagsDialog(): React.JSX.Element | null {
   const update = (field: keyof FormFields) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setFields((f) => ({ ...f, [field]: e.target.value }))
 
+  const setField = (field: keyof FormFields) => (v: string) =>
+    setFields((f) => ({ ...f, [field]: v }))
+
   const save = async () => {
     setSaving(true)
     setError(null)
@@ -70,6 +78,7 @@ export function EditTagsDialog(): React.JSX.Element | null {
       genre: fields.genre,
       bpm: fields.bpm,
       key: fields.key,
+      energy: fields.energy,
       year: fields.year || undefined,
       remixer: fields.remixer,
       grouping: fields.grouping,
@@ -91,6 +100,7 @@ export function EditTagsDialog(): React.JSX.Element | null {
           genre: fields.genre || undefined,
           bpm: fields.bpm || undefined,
           key: fields.key || undefined,
+          energy: fields.energy || undefined,
           year: fields.year || undefined,
           remixer: fields.remixer || undefined,
           grouping: fields.grouping || undefined,
@@ -130,37 +140,40 @@ export function EditTagsDialog(): React.JSX.Element | null {
           <input className="edit-input" value={fields.title} onChange={update('title')} placeholder="Track title" />
 
           <label className="edit-label">Artist</label>
-          <input className="edit-input" value={fields.artist} onChange={update('artist')} placeholder="Artist name" />
-
-          <label className="edit-label">Album</label>
-          <input className="edit-input" value={fields.album} onChange={update('album')} placeholder="Album" />
-
-          <label className="edit-label">Genre</label>
-          <input className="edit-input" value={fields.genre} onChange={update('genre')} placeholder="Genre" />
+          <ArtistInput value={fields.artist} onChange={setField('artist')} onCommit={setField('artist')} inputClassName="edit-input" />
 
           <label className="edit-label">BPM</label>
           <input className="edit-input edit-input-narrow" value={fields.bpm} onChange={update('bpm')} placeholder="128" />
 
           <label className="edit-label">Key (Camelot)</label>
-          <input className="edit-input edit-input-narrow" value={fields.key} onChange={update('key')} placeholder="8A" />
+          <CamelotKeyPicker value={fields.key} onChange={setField('key')} />
+
+          <label className="edit-label">Genre</label>
+          <TagInput field="genre" value={fields.genre} onChange={setField('genre')} />
+
+          <label className="edit-label">Energy</label>
+          <input className="edit-input edit-input-narrow" value={fields.energy} onChange={update('energy')} placeholder="1-10" />
 
           <label className="edit-label">Year</label>
           <input className="edit-input edit-input-narrow" value={fields.year} onChange={update('year')} placeholder="2024" />
 
+          <label className="edit-label">Album</label>
+          <input className="edit-input" value={fields.album} onChange={update('album')} placeholder="Album" />
+
           <label className="edit-label">Remixer</label>
-          <input className="edit-input" value={fields.remixer} onChange={update('remixer')} placeholder="Remixer name" />
-
-          <label className="edit-label">Grouping</label>
-          <input className="edit-input" value={fields.grouping} onChange={update('grouping')} placeholder="Grouping" />
-
-          <label className="edit-label">Composer</label>
-          <input className="edit-input" value={fields.composer} onChange={update('composer')} placeholder="Composer" />
+          <TagInput field="remixer" value={fields.remixer} onChange={setField('remixer')} />
 
           <label className="edit-label">Label</label>
-          <input className="edit-input" value={fields.label} onChange={update('label')} placeholder="Record label" />
+          <TagInput field="label" value={fields.label} onChange={setField('label')} />
+
+          <label className="edit-label">Grouping</label>
+          <TagInput field="grouping" value={fields.grouping} onChange={setField('grouping')} />
+
+          <label className="edit-label">Composer</label>
+          <TagInput field="composer" value={fields.composer} onChange={setField('composer')} />
 
           <label className="edit-label">Comment</label>
-          <input className="edit-input" value={fields.comment} onChange={update('comment')} placeholder="Comment" />
+          <TagInput field="comment" value={fields.comment} onChange={setField('comment')} />
         </div>
 
         {hasFile && (
@@ -179,10 +192,10 @@ export function EditTagsDialog(): React.JSX.Element | null {
         {seratoNote && !error && <div className="edit-success">{seratoNote}</div>}
 
         <div className="dialog-actions">
-          <button className="dialog-btn" onClick={closeEditDialog} disabled={saving}>
+          <button className="btn btn-outline" onClick={closeEditDialog} disabled={saving}>
             Cancel
           </button>
-          <button className="dialog-btn dialog-btn-primary" onClick={save} disabled={saving}>
+          <button className="btn btn-solid" onClick={save} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

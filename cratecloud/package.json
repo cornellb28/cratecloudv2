@@ -26,7 +26,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "better-sqlite3": "^12.11.1",
-    "chokidar": "^5.0.0",
+    "chokidar": "^3.6.0",
     "electron-updater": "^6.3.9",
     "jsonwebtoken": "^9.0.3",
     "react-window": "^2.3.0",

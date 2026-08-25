@@ -87,8 +87,8 @@ export function Toolbar(): React.JSX.Element {
         {/* Search box */}
         <div className="search-wrap">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="5" stroke="#555" strokeWidth="1.5" />
-            <line x1="11" y1="11" x2="14" y2="14" stroke="#555" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="7" cy="7" r="5" stroke="var(--color-text-disabled)" strokeWidth="1.5" />
+            <line x1="11" y1="11" x2="14" y2="14" stroke="var(--color-text-disabled)" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
           <input
             placeholder="Search… or use bpm:128, key:8A, genre:house"
@@ -129,7 +129,7 @@ export function Toolbar(): React.JSX.Element {
 
         {/* Untagged toggle */}
         <button
-          className={`pill${hasUntagged ? ' on' : ''}`}
+          className={`btn btn-outline${hasUntagged ? ' btn-active' : ''}`}
           onClick={() => setActiveFilter(hasUntagged ? 'All' : 'Untagged')}
         >
           Untagged
@@ -137,7 +137,7 @@ export function Toolbar(): React.JSX.Element {
 
         {/* Advanced filter toggle */}
         <button
-          className={`pill${advOpen || activeCount > 0 ? ' on' : ''}`}
+          className={`btn btn-outline${advOpen || activeCount > 0 ? ' btn-active' : ''}`}
           onClick={() => setAdvOpen((o) => !o)}
           title="Advanced filters"
         >
@@ -148,7 +148,7 @@ export function Toolbar(): React.JSX.Element {
           {VIEWS.map((v) => (
             <button
               key={v.id}
-              className={`vbtn${activeView === v.id ? ' active' : ''}`}
+              className={`btn btn-outline${activeView === v.id ? ' btn-active' : ''}`}
               onClick={() => setActiveView(v.id)}
             >
               {v.label}
@@ -157,7 +157,7 @@ export function Toolbar(): React.JSX.Element {
         </div>
 
         <button
-          className="vbtn"
+          className="btn btn-outline"
           onClick={() => setBoardSettingsOpen(true)}
           title="Manage boards & auto-assign rules"
         >
@@ -166,7 +166,7 @@ export function Toolbar(): React.JSX.Element {
 
         <LockBadge locked={isLocked('duplicateDetection')} featureName="Duplicate Detection">
           <button
-            className="vbtn"
+            className="btn btn-outline"
             onClick={() => setDuplicatesOpen(true)}
             title="Scan for possible duplicate tracks"
           >
@@ -175,7 +175,7 @@ export function Toolbar(): React.JSX.Element {
         </LockBadge>
 
         <button
-          className="vbtn"
+          className="btn btn-outline"
           onClick={() => setExportOpen(true)}
           title="Export library to Rekordbox XML or Serato M3U playlists"
         >

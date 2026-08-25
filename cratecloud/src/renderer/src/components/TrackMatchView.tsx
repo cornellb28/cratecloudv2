@@ -130,7 +130,7 @@ export function TrackMatchView(): React.JSX.Element {
           <div className="lib-empty-sub">
             Track Match needs BPM, key, and energy all analyzed — this track is missing at least one.
           </div>
-          <button className="bem-btn primary" style={{ marginTop: 12 }} onClick={() => setSourceId(null)}>
+          <button className="btn btn-solid" style={{ marginTop: 12 }} onClick={() => setSourceId(null)}>
             Choose a different track
           </button>
         </div>
@@ -154,7 +154,7 @@ export function TrackMatchView(): React.JSX.Element {
           <div className="tm-source-title">{sourceTrack.title} <span className="tm-source-artist">— {sourceTrack.artist}</span></div>
           <div className="tm-source-meta">{sourceTrack.camelot} · {sourceTrack.bpm} bpm · energy {sourceTrack.energy}</div>
         </div>
-        <button className="bem-btn" onClick={() => setSourceId(null)}>Change track</button>
+        <button className="btn btn-outline" onClick={() => setSourceId(null)}>Change track</button>
       </div>
 
       {matches.length === 0 ? (

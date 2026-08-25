@@ -82,7 +82,7 @@ export function TitleBar(): React.JSX.Element {
         )}
 
         <button
-          className="icon-btn"
+          className="btn btn-outline"
           onClick={handleImportLibrary}
           disabled={importing}
           title="Register a root music folder as a library — CrateCloud remembers it and can rescan it later without re-importing everything"
@@ -91,7 +91,7 @@ export function TitleBar(): React.JSX.Element {
         </button>
 
         <button
-          className="icon-btn accent"
+          className="btn btn-solid"
           onClick={() => importFromDialog('files')}
           disabled={importing}
           title="Pick one or more audio files to add — a one-time addition, not tracked as a library source"

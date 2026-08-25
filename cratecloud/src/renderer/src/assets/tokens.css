@@ -1,0 +1,108 @@
+/* ── Design tokens ──
+ * Single source of truth for color. Values below are pulled from the most
+ * frequent/canonical real usage in main.css (grep'd, not invented) — where
+ * multiple near-duplicate hexes served the same role, the dominant one won
+ * and the rest are documented as consolidated. Two exceptions are called
+ * out below where no real precedent existed for a role the audit needed.
+ */
+
+:root {
+  /* Surface (deepest → most elevated) */
+  --color-surface-0: #0e0e12; /* .app body background */
+  --color-surface-1: #12121a; /* .sidebar, .panel, .setlist-sidebar */
+  --color-surface-2: #1a1a26; /* .track-card and other card/row surfaces */
+  --color-surface-3: #1e1e2c; /* .ctx-menu and dropdown/menu surfaces */
+
+  /* Brand */
+  --color-brand: #7f77dd; /* dominant accent, 129 uses */
+  --color-brand-light: #a09be8; /* 56 uses */
+  --color-brand-dark: #534ab7; /* no exact precedent in main.css — computed hover-dark of --color-brand, since no consistent "brand hover" hex exists today */
+  --color-brand-subtle: rgba(127, 119, 221, 0.1); /* brand at 10%, for selected-state backgrounds */
+
+  /* Semantic */
+  --color-success: #1d9e75; /* dominant success green (8 uses); consolidates #4caf50 and #5dbb8a */
+  --color-success-bg: rgba(29, 158, 117, 0.15);
+  --color-warning: #d8a03a; /* dominant real amber (.fhv-folder-missing, .settings-root-status-offline); note: no #ba7517 exists anywhere in the codebase, so that value was not used */
+  --color-warning-bg: rgba(216, 160, 58, 0.15);
+  --color-danger: #d85a30; /* dominant danger button/border color (8 uses); consolidates #c0392b and #f0997b */
+  --color-danger-bg: rgba(216, 90, 48, 0.15);
+  --color-info: #5d9fd8; /* no general "info" semantic color exists in the codebase today (no #378add anywhere) — sourced from .tag.bpm's blue, the closest existing "informational" color, rather than invented from scratch */
+  --color-info-bg: rgba(93, 159, 216, 0.15);
+
+  /* Text */
+  --color-text-primary: #e8e8f0; /* .app base text color, 26 uses */
+  --color-text-secondary: #c0c0d8; /* 24 uses */
+  --color-text-muted: #888; /* 29 uses — hints, panel headers */
+  --color-text-disabled: #444; /* dimmest defined text gray in use (.sb-section, .sb-letter-header) */
+
+  /* Border */
+  --color-border: #2a2a3a; /* dominant hairline border, 68 uses */
+  --color-border-strong: #3a3a5a; /* hover/emphasis border */
+  --color-border-focus: var(--color-brand);
+
+  /* Tag / badge tokens (DJ-specific) — exact values already in use, no consolidation needed */
+  --color-tag-bpm-bg: #1a2535;
+  --color-tag-bpm-text: #5d9fd8;
+  --color-tag-key-bg: #1a2830;
+  --color-tag-key-text: #3db88a;
+  --color-tag-energy-bg: #2a1f1a;
+  --color-tag-energy-text: #d4855d;
+  --color-tag-genre-bg: #261f3a;
+  --color-tag-genre-text: #9b8ed4;
+  --color-tag-missing-bg: #332c12;
+  --color-tag-missing-text: #e0b84a;
+
+  /* Control heights
+     On mobile, use --control-height-touch (44px) for all interactive
+     elements. The desktop sizes above are intentionally smaller for
+     pointer precision. The mobile build will override via media query. */
+  --control-height-sm: 28px;
+  --control-height-md: 32px;
+  --control-height-lg: 36px;
+  --control-height-touch: 44px; /* mobile minimum */
+
+  /* Radius */
+  --radius-sm: 4px; /* tags, badges, small chips */
+  --radius-md: 6px; /* buttons, inputs, dropdowns */
+  --radius-lg: 8px; /* cards, panels, context menus */
+  --radius-xl: 12px; /* modals, large cards */
+  --radius-full: 9999px; /* pills, avatars, round buttons */
+
+  /* Font size */
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-base: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 14px;
+  --font-size-xl: 16px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+
+  /* Spacing (8pt-ish grid) — added ahead of Item 7's migration since it
+     was never defined in Item 2 despite being referenced as if it were. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+}
+
+/* ── Mobile overrides (Phase 3 / React Native — not yet consumed by any
+   build) ── */
+@media (max-width: 768px) {
+  :root {
+    --control-height-sm: 36px; /* was 28px */
+    --control-height-md: 40px; /* was 32px */
+    --control-height-lg: 44px; /* was 36px */
+    --control-height-touch: 48px; /* was 44px */
+
+    --font-size-base: 13px; /* was 12px */
+    --font-size-md: 14px; /* was 13px */
+
+    --radius-md: 8px; /* was 6px */
+    --radius-lg: 12px; /* was 8px */
+  }
+}

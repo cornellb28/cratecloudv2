@@ -174,6 +174,9 @@ type LibraryState = {
   // filters within List/Board/Grid rather than a replacement view.
   selectedGenre: string | null
   selectedArtist: string | null
+  // Label Manager occupies the same main-content slot as Genre/Artist
+  // browsing — same mutual-exclusivity rules apply.
+  labelManagerOpen: boolean
   boards: Board[]
   crateDialog:
     | { mode: 'create'; pendingTrackIds?: number[] }
@@ -218,6 +221,7 @@ type LibraryState = {
   setActiveFolder: (id: number | null) => void
   setSelectedGenre: (genre: string | null) => void
   setSelectedArtist: (artist: string | null) => void
+  setLabelManagerOpen: (open: boolean) => void
   setTrackFolder: (trackId: number, folderId: number | null) => Promise<void>
   createBoard: (name: string, color: string) => Promise<void>
   renameBoard: (id: number, oldName: string, newName: string) => Promise<void>
@@ -262,6 +266,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activeFolderId: null,
   selectedGenre: null,
   selectedArtist: null,
+  labelManagerOpen: false,
   boards: [],
   crateDialog: null,
 
@@ -332,8 +337,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   // Navigating tabs/views exits genre/artist browse mode — those are
   // dedicated views occupying the same main content area, not filters that
   // stack with List/Board/Grid the way activeCrateId/activeFolderId do.
-  setActiveTab: (tab) => set({ activeTab: tab, selectedGenre: null, selectedArtist: null }),
-  setActiveView: (v) => set({ activeView: v, selectedGenre: null, selectedArtist: null }),
+  setActiveTab: (tab) =>
+    set({ activeTab: tab, selectedGenre: null, selectedArtist: null, labelManagerOpen: false }),
+  setActiveView: (v) =>
+    set({ activeView: v, selectedGenre: null, selectedArtist: null, labelManagerOpen: false }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setActiveFilter: (f) => set({ activeFilter: f }),
   setAdvancedFilter: (key, value) =>
@@ -616,10 +623,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   closeEditDialog: () => set({ editDialog: null }),
   setRenamingTrackId: (id) => set({ renamingTrackId: id }),
 
-  setActiveCrate: (id) => set({ activeCrateId: id, selectedGenre: null, selectedArtist: null }),
-  setActiveFolder: (id) => set({ activeFolderId: id, selectedGenre: null, selectedArtist: null }),
-  setSelectedGenre: (genre) => set({ selectedGenre: genre, selectedArtist: null }),
-  setSelectedArtist: (artist) => set({ selectedArtist: artist, selectedGenre: null }),
+  setActiveCrate: (id) =>
+    set({ activeCrateId: id, selectedGenre: null, selectedArtist: null, labelManagerOpen: false }),
+  setActiveFolder: (id) =>
+    set({ activeFolderId: id, selectedGenre: null, selectedArtist: null, labelManagerOpen: false }),
+  setSelectedGenre: (genre) => set({ selectedGenre: genre, selectedArtist: null, labelManagerOpen: false }),
+  setSelectedArtist: (artist) => set({ selectedArtist: artist, selectedGenre: null, labelManagerOpen: false }),
+  setLabelManagerOpen: (open) =>
+    set(open ? { labelManagerOpen: true, selectedGenre: null, selectedArtist: null } : { labelManagerOpen: false }),
 
   setTrackFolder: async (trackId, folderId) => {
     await window.api.folders.updateTrackFolders([{ trackId, folderId }])

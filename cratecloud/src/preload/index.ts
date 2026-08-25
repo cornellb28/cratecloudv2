@@ -3,11 +3,14 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type { AnalysisResult, ProgressEvent } from '../main/audioSidecar'
 import type { BillingState } from '../main/billing'
 import type { FolderMoveResult, UndoMoveEntry, ScanResult, ScanProgress } from '../main/index'
-import type { LibraryRootRow } from '../main/db'
+import type { LibraryRootRow, GenreCount, ArtistCount, LabelValueCount } from '../main/db'
 import type { ExportTrack, ExportCrate } from '../main/export'
 
 type ExportPayload = { tracks: ExportTrack[]; crates: ExportCrate[] }
 type ExportResult = { ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }
+
+type RenameResult = { ok: boolean; newPath?: string; newTitle?: string; error?: string }
+type RelinkResult = { ok: boolean; newPath?: string; error?: string }
 
 const api = {
   // ── Audio analysis ─────────────────────────────────────────────────────
@@ -47,6 +50,32 @@ const api = {
     tracksCount: (): Promise<number> => ipcRenderer.invoke('db:tracksCount'),
     tracksByFilepaths: (filepaths: string[]) =>
       ipcRenderer.invoke('db:tracksByFilepaths', filepaths),
+    allGenres: (): Promise<GenreCount[]> => ipcRenderer.invoke('db:allGenres'),
+    tracksByGenre: (genre: string, offset: number, limit: number) =>
+      ipcRenderer.invoke('db:tracksByGenre', genre, offset, limit),
+    tracksByGenreCount: (genre: string): Promise<number> =>
+      ipcRenderer.invoke('db:tracksByGenreCount', genre),
+    tracksByGenreAndColumn: (genre: string, column: string, offset: number, limit: number) =>
+      ipcRenderer.invoke('db:tracksByGenreAndColumn', genre, column, offset, limit),
+    tracksByGenreAndColumnCount: (genre: string, column: string): Promise<number> =>
+      ipcRenderer.invoke('db:tracksByGenreAndColumnCount', genre, column),
+    allArtists: (): Promise<ArtistCount[]> => ipcRenderer.invoke('db:allArtists'),
+    tracksByArtist: (artist: string, offset: number, limit: number) =>
+      ipcRenderer.invoke('db:tracksByArtist', artist, offset, limit),
+    tracksByArtistCount: (artist: string): Promise<number> =>
+      ipcRenderer.invoke('db:tracksByArtistCount', artist),
+    tracksByArtistAndColumn: (artist: string, column: string, offset: number, limit: number) =>
+      ipcRenderer.invoke('db:tracksByArtistAndColumn', artist, column, offset, limit),
+    tracksByArtistAndColumnCount: (artist: string, column: string): Promise<number> =>
+      ipcRenderer.invoke('db:tracksByArtistAndColumnCount', artist, column),
+    labelValueCounts: (field: 'genre' | 'artist'): Promise<LabelValueCount[]> =>
+      ipcRenderer.invoke('db:labelValueCounts', field),
+    renameLabelValue: (
+      field: 'genre' | 'artist',
+      oldValue: string,
+      newValue: string
+    ): Promise<{ ok: boolean; tracksUpdated?: number; error?: string }> =>
+      ipcRenderer.invoke('db:renameLabelValue', field, oldValue, newValue),
     insertTracks: (rows: unknown[]) => ipcRenderer.invoke('db:insertTracks', rows),
     updateTrack: (id: number, fields: Record<string, unknown>) =>
       ipcRenderer.invoke('db:updateTrack', id, fields),
@@ -57,6 +86,17 @@ const api = {
       ipcRenderer.invoke('db:autoMoveTracks', ids, column),
     resetTrackStatus: (id: number): Promise<void> =>
       ipcRenderer.invoke('db:resetTrackStatus', id),
+  },
+
+  // ── Track file operations ─────────────────────────────────────────────────
+  // Move/reveal-in-Finder reuse fs.moveFile/fs.showInFolder above, and
+  // copy-filepath uses navigator.clipboard directly in the renderer —
+  // neither needed a new IPC channel.
+  track: {
+    renameFile: (id: number, newName: string): Promise<RenameResult> =>
+      ipcRenderer.invoke('track:renameFile', id, newName),
+    relinkFile: (id: number, newFilepath: string): Promise<RelinkResult> =>
+      ipcRenderer.invoke('track:relinkFile', id, newFilepath),
   },
 
   // ── File dialogs ────────────────────────────────────────────────────────

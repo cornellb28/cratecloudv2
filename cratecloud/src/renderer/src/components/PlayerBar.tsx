@@ -68,6 +68,43 @@ export function PlayerBar(): React.JSX.Element | null {
     if (audio) audio.volume = volume
   }, [volume])
 
+  // Remembers the last non-zero volume so M can toggle mute/unmute back to it.
+  const lastVolumeRef = useRef(volume > 0 ? volume : 0.8)
+  useEffect(() => {
+    if (volume > 0) lastVolumeRef.current = volume
+  }, [volume])
+
+  // Single canonical source for these shortcuts — PlayerBar is always
+  // mounted, so any other component adding its own Space/etc. listener
+  // would double-fire alongside this one (removed from LibraryView and
+  // TrackEditorModal for that reason).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!currentTrack) return
+      const target = e.target as HTMLElement | null
+      const inInput = !!target && (target.closest('input, textarea, [contenteditable]') != null)
+      if (inInput) return
+
+      if (e.key === ' ') {
+        e.preventDefault()
+        togglePlay()
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault()
+        const audio = audioRef.current
+        if (!audio || !isFinite(audio.duration)) return
+        const delta = e.key === 'ArrowLeft' ? -10 : 10
+        const t = Math.max(0, Math.min(audio.duration, audio.currentTime + delta))
+        audio.currentTime = t
+        setCurrentTime(t)
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault()
+        setVolume(volume > 0 ? 0 : lastVolumeRef.current)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [currentTrack, togglePlay, setCurrentTime, setVolume, volume])
+
   if (!currentTrack) return null
 
   const progress = duration > 0 ? currentTime / duration : 0
@@ -90,7 +127,7 @@ export function PlayerBar(): React.JSX.Element | null {
     }
   }
 
-  const queue = allTracks().filter((t) => t.filepath)
+  const queue = allTracks().filter((t) => t.filepath && t.missing_since == null)
   const currentIdx = queue.findIndex((t) => t.id === currentTrack.id)
   const hasPrev = currentIdx > 0
   const hasNext = currentIdx < queue.length - 1

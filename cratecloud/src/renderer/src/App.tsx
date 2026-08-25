@@ -1,3 +1,44 @@
+/*
+ * MOBILE NAVIGATION PLAN (React Native — Phase 3)
+ *
+ * Bottom tab bar (4 tabs, Spotify-inspired):
+ *   [Library]  [Search]  [Now Playing]  [Profile]
+ *
+ * Library tab → mirrors the desktop sidebar hierarchy. Screen names below
+ * are new mobile-native screens, not 1:1 ports of desktop components —
+ * e.g. there's no desktop "CrateView"/"SearchView" (crate filtering and
+ * search are inline states within LibraryView today), but each becomes
+ * its own screen on mobile:
+ *   Stack: LibraryRoot → CrateList → CrateView
+ *                      → GenreList → GenreView
+ *                      → ArtistList → ArtistView
+ *                      → FolderTree → FolderView
+ *                      → LabelManager (tab-based, see below)
+ *
+ * Search tab → full-screen search (instant, client-side)
+ *   Results categorized: Tracks | Artists | Genres
+ *
+ * Now Playing tab → expanded MiniPlayer (full screen)
+ *   Waveform, match panel, metadata, queue
+ *
+ * Profile tab → settings, cloud sync status, export
+ *
+ * Views needing full redesign (not just responsive), see TODO comments
+ * in each file:
+ *   - BoardView → single column, swipe between columns
+ *   - TrackEditorModal ("Inspector") → bottom sheet (peek → full)
+ *   - FolderHierarchyView → native-style drill-down list
+ *   - BulkEditModal → full-screen sheet
+ *   - ContextMenu → action sheet from bottom
+ *   - LabelManagerView → tab-based (Genre | Artist | Energy | Board)
+ *
+ * Token system from tokens.css applies to React Native via StyleSheet
+ * equivalents — see utils/tokens.ts, which mirrors tokens.css as JS
+ * constants for use in any non-CSS context. The @media override block in
+ * tokens.css documents the mobile values for the web build; React Native
+ * would read the tokens.ts constants directly instead.
+ */
+
 import { useEffect } from 'react'
 import { useLibraryStore, rowToTrack } from './stores/useLibraryStore'
 import { useTagStore } from './stores/useTagStore'
@@ -19,6 +60,9 @@ import { ArtistExplorer } from './components/ArtistExplorer'
 import { PlayerBar } from './components/PlayerBar'
 import { FolderHierarchyView } from './components/FolderHierarchyView'
 import { GroupedTrackView } from './components/GroupedTrackView'
+import { GenreView } from './views/GenreView'
+import { ArtistView } from './views/ArtistView'
+import { LabelManagerView } from './views/LabelManagerView'
 import { SettingsView } from './components/SettingsView'
 import { TrackMatchView } from './components/TrackMatchView'
 import { LockedView } from './components/LockedView'
@@ -27,7 +71,16 @@ import { usePlanLimits } from './hooks/usePlanLimits'
 const NO_SIDEBAR_TABS = ['Setlist', 'Artist', 'Settings', 'Track Match']
 
 function AppInner(): React.JSX.Element {
-  const { activeTab, activeView, initFromDb, setAudioPort, appendTrack } = useLibraryStore()
+  const {
+    activeTab,
+    activeView,
+    selectedGenre,
+    selectedArtist,
+    labelManagerOpen,
+    initFromDb,
+    setAudioPort,
+    appendTrack
+  } = useLibraryStore()
   const { init: initTags } = useTagStore()
   const { init: initFolders } = useFolderStore()
   const { isLocked } = usePlanLimits()
@@ -62,12 +115,39 @@ function AppInner(): React.JSX.Element {
             </>
           )}
 
-          {activeTab === 'Library' && activeView === 'List' && <LibraryView />}
-          {activeTab === 'Library' && activeView === 'Board' && <BoardView />}
-          {activeTab === 'Library' && activeView === 'Grid' && <LibraryView gridMode />}
-          {activeTab === 'Library' && activeView === 'Folders' && <FolderHierarchyView />}
-          {activeTab === 'Library' && activeView === 'Albums' && <GroupedTrackView field="album" heading="Albums" />}
-          {activeTab === 'Library' && activeView === 'Genres' && <GroupedTrackView field="genre" heading="Genres" />}
+          {activeTab === 'Library' && selectedGenre && <GenreView genre={selectedGenre} />}
+          {activeTab === 'Library' && selectedArtist && <ArtistView artist={selectedArtist} />}
+          {activeTab === 'Library' && labelManagerOpen && <LabelManagerView />}
+          {activeTab === 'Library' &&
+            !selectedGenre &&
+            !selectedArtist &&
+            !labelManagerOpen &&
+            activeView === 'List' && <LibraryView />}
+          {activeTab === 'Library' &&
+            !selectedGenre &&
+            !selectedArtist &&
+            !labelManagerOpen &&
+            activeView === 'Board' && <BoardView />}
+          {activeTab === 'Library' &&
+            !selectedGenre &&
+            !selectedArtist &&
+            !labelManagerOpen &&
+            activeView === 'Grid' && <LibraryView gridMode />}
+          {activeTab === 'Library' &&
+            !selectedGenre &&
+            !selectedArtist &&
+            !labelManagerOpen &&
+            activeView === 'Folders' && <FolderHierarchyView />}
+          {activeTab === 'Library' &&
+            !selectedGenre &&
+            !selectedArtist &&
+            !labelManagerOpen &&
+            activeView === 'Albums' && <GroupedTrackView field="album" heading="Albums" />}
+          {activeTab === 'Library' &&
+            !selectedGenre &&
+            !selectedArtist &&
+            !labelManagerOpen &&
+            activeView === 'Genres' && <GroupedTrackView field="genre" heading="Genres" />}
           {activeTab === 'Artist' && <ArtistExplorer />}
           {activeTab === 'Setlist' && <SetlistView />}
           {activeTab === 'Settings' && <SettingsView />}

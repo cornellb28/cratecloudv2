@@ -16,6 +16,10 @@ const BOARD_COLORS = ['#7f77dd', '#378add', '#1d9e75', '#d85a30', '#d4537e', '#b
 
 type DeleteDialog = { board: Board; fallbackId: number }
 
+// MOBILE TODO: Board columns do not fit on 390px screens.
+// Replace with a horizontal swipe-between-tabs layout:
+// one column visible at a time, swipe left/right to move
+// between Untagged / Tagged / Crate ready / Gig ready.
 export function BoardView(): React.JSX.Element {
   const {
     columns, boards, moveTrack, reorderBoards, deleteBoard, createBoard,

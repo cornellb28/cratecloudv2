@@ -78,16 +78,16 @@ export function CrateDialog(): React.JSX.Element | null {
 
         <div className="dialog-actions">
           {isEdit && (
-            <button className="dialog-btn crate-delete-btn" onClick={handleDelete} disabled={saving}>
+            <button className="btn btn-danger" onClick={handleDelete} disabled={saving}>
               Delete crate
             </button>
           )}
           <div style={{ flex: 1 }} />
-          <button className="dialog-btn" onClick={closeCrateDialog} disabled={saving}>
+          <button className="btn btn-outline" onClick={closeCrateDialog} disabled={saving}>
             Cancel
           </button>
           <button
-            className="dialog-btn dialog-btn-primary"
+            className="btn btn-solid"
             onClick={save}
             disabled={saving || !name.trim()}
           >

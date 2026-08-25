@@ -3,7 +3,7 @@ import { join, extname, basename, relative, dirname, normalize } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import { readdir, rename, copyFile, unlink, stat, mkdir, writeFile, readFile } from 'fs/promises'
-import { createReadStream, writeFileSync } from 'fs'
+import { createReadStream, writeFileSync, existsSync, renameSync, statSync } from 'fs'
 import * as http from 'http'
 import type { AddressInfo } from 'net'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -26,6 +26,11 @@ import {
 } from './billing'
 import {
   getAllTracks, getTracksPaginated, getTracksCount, getTracksByFilepaths,
+  getAllGenres, getTracksByGenre, getTracksByGenreCount,
+  getTracksByGenreAndColumn, getTracksByGenreAndColumnCount,
+  getAllArtists, getTracksByArtist, getTracksByArtistCount,
+  getTracksByArtistAndColumn, getTracksByArtistAndColumnCount,
+  getLabelValueCounts, renameLabelValue,
   getTrackById, insertTracks, updateTrackFields, deleteTracks, moveTracksToColumn,
   autoMoveTracksToColumn, resetTrackStatusManual, updateBoardCriteria,
   getCrates, insertCrate, updateCrateRow, deleteCrateRow,
@@ -39,6 +44,7 @@ import {
   updateTrackFolderIds, ensureFolderTree,
   getBoards, insertBoard, renameBoardAndCascade, updateBoardColor, updateBoardPositions, deleteBoardAndCascade,
   getDismissedDuplicatePairs, addDismissedDuplicatePair,
+  relinkTrackFilepath,
   getLibraryRoots, deleteLibraryRoot, ensureLibraryRootTree, markLibraryRootScanned,
   isKnownTrackFilepath,
   type DbTrackInsert,
@@ -533,7 +539,11 @@ app.whenReady().then(() => {
     const results: AnalysisResult[] = new Array(total)
     let nextIdx = 0
     let completed = 0
-    const CONCURRENCY = 4
+    // Each worker spawns a Python sidecar process — interpreter start-up
+    // alone can open a real number of file descriptors loading its own
+    // shared libraries, so too much parallelism here risks EMFILE on large
+    // imports (seen in practice). 2 trades some import speed for headroom.
+    const CONCURRENCY = 2
 
     const workers = Array.from({ length: Math.min(CONCURRENCY, total) }, async () => {
       while (true) {
@@ -615,7 +625,9 @@ app.whenReady().then(() => {
     let completed = 0
     let tracksInserted = 0
     let analysisErrors = 0
-    const CONCURRENCY = 4
+    // See the matching comment in analyze-folder — same EMFILE risk on
+    // large imports from too many concurrent sidecar spawns.
+    const CONCURRENCY = 2
     const BATCH_SIZE = 200
     let pendingBatch: DbTrackInsert[] = []
 
@@ -851,6 +863,38 @@ app.whenReady().then(() => {
     getTracksByFilepaths(filepaths)
   )
 
+  // ── Genre / Artist browsing (sidebar) ─────────────────────────────────────
+  ipcMain.handle('db:allGenres', () => getAllGenres())
+  ipcMain.handle('db:tracksByGenre', (_e, genre: string, offset: number, limit: number) =>
+    getTracksByGenre(genre, offset, limit)
+  )
+  ipcMain.handle('db:tracksByGenreCount', (_e, genre: string) => getTracksByGenreCount(genre))
+  ipcMain.handle(
+    'db:tracksByGenreAndColumn',
+    (_e, genre: string, column: string, offset: number, limit: number) =>
+      getTracksByGenreAndColumn(genre, column, offset, limit)
+  )
+  ipcMain.handle('db:tracksByGenreAndColumnCount', (_e, genre: string, column: string) =>
+    getTracksByGenreAndColumnCount(genre, column)
+  )
+  ipcMain.handle('db:allArtists', () => getAllArtists())
+  ipcMain.handle('db:tracksByArtist', (_e, artist: string, offset: number, limit: number) =>
+    getTracksByArtist(artist, offset, limit)
+  )
+  ipcMain.handle('db:tracksByArtistCount', (_e, artist: string) => getTracksByArtistCount(artist))
+  ipcMain.handle(
+    'db:tracksByArtistAndColumn',
+    (_e, artist: string, column: string, offset: number, limit: number) =>
+      getTracksByArtistAndColumn(artist, column, offset, limit)
+  )
+  ipcMain.handle('db:tracksByArtistAndColumnCount', (_e, artist: string, column: string) =>
+    getTracksByArtistAndColumnCount(artist, column)
+  )
+  ipcMain.handle('db:labelValueCounts', (_e, field: string) => getLabelValueCounts(field))
+  ipcMain.handle('db:renameLabelValue', (_e, field: string, oldValue: string, newValue: string) =>
+    renameLabelValue(field, oldValue, newValue)
+  )
+
   ipcMain.handle('db:insertTracks', (_event, rows) => insertTracks(rows))
 
   ipcMain.handle('db:updateTrack', (_event, id: number, fields: Record<string, unknown>) =>
@@ -862,6 +906,61 @@ app.whenReady().then(() => {
   ipcMain.handle('db:moveTracks', (_event, ids: number[], column: string) =>
     moveTracksToColumn(ids, column)
   )
+
+  // ── Track file operations ───────────────────────────────────────────────────
+  // Moving a track's file and revealing it in Finder/Explorer already have
+  // handlers (fs:moveFile, fs:showInFolder) used by the existing ContextMenu —
+  // deliberately not duplicated here.
+  ipcMain.handle('track:renameFile', (_e, id: number, newName: string) => {
+    try {
+      const track = getTrackById(id)
+      if (!track) return { ok: false, error: 'Track not found' }
+      if (!track.filepath) return { ok: false, error: 'Track has no file on disk' }
+
+      const trimmed = newName.trim()
+      if (!trimmed) return { ok: false, error: 'Name cannot be empty' }
+      if (/[/\\]/.test(trimmed)) return { ok: false, error: 'Name cannot contain slashes' }
+      if (/[<>:"|?*]/.test(trimmed)) return { ok: false, error: 'Name contains invalid characters' }
+
+      const ext = extname(track.filepath)
+      // Keep the real file extension regardless of what the user typed —
+      // a stray ".mp3" in the new name shouldn't double up or get dropped.
+      const newTitle = trimmed.replace(/\.[^./\\]+$/, '')
+      const newPath = join(dirname(track.filepath), newTitle + ext)
+
+      if (newPath !== track.filepath && existsSync(newPath)) {
+        return { ok: false, error: 'A file with that name already exists' }
+      }
+
+      if (newPath !== track.filepath) {
+        renameSync(track.filepath, newPath)
+        updateTrackFields(id, { filepath: newPath, title: newTitle })
+      } else {
+        updateTrackFields(id, { title: newTitle })
+      }
+
+      return { ok: true, newPath, newTitle }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Exposes the relink capability db.ts/reconcile.ts already use internally
+  // (orphan reconciliation, the watcher) for the "Locate file…" UI action —
+  // the DJ manually points a missing track at its real file.
+  ipcMain.handle('track:relinkFile', (_e, id: number, newFilepath: string) => {
+    try {
+      const track = getTrackById(id)
+      if (!track) return { ok: false, error: 'Track not found' }
+      if (!existsSync(newFilepath)) return { ok: false, error: 'Selected file does not exist' }
+      if (!statSync(newFilepath).isFile()) return { ok: false, error: 'Selected path is not a file' }
+
+      relinkTrackFilepath(id, newFilepath)
+      return { ok: true, newPath: newFilepath }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 
   // ── Crates ────────────────────────────────────────────────────────────────
   ipcMain.handle('crate:getAll', () => getCrates())
