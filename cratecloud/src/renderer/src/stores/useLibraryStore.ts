@@ -1,18 +1,38 @@
 import { create } from 'zustand'
 import type { Track, Setlist, Crate, Board } from '../types/track'
-import { type AdvancedFilters, DEFAULT_ADVANCED_FILTERS, type ActiveTagFilter } from '../utils/searchFilter'
+import {
+  type AdvancedFilters,
+  DEFAULT_ADVANCED_FILTERS,
+  type ActiveTagFilter
+} from '../utils/searchFilter'
 
 // Mirrors db.ts DbTrackRow — keep in sync
 type DbTrackRow = {
-  id: number; title: string; artist: string; bpm: string; key_val: string
-  genre: string; energy: string; column_name: string; status_is_manual: number
-  folder: string | null; folder_id: number | null
-  filepath: string | null; camelot: string | null; openkey: string | null
-  duration_str: string | null; duration_sec: number | null
-  file_size_mb: number | null; format: string | null
-  album: string | null; year: string | null
-  remixer: string | null; grouping: string | null; composer: string | null
-  comment: string | null; label: string | null
+  id: number
+  title: string
+  artist: string
+  bpm: string
+  key_val: string
+  genre: string
+  energy: string
+  column_name: string
+  status_is_manual: number
+  folder: string | null
+  folder_id: number | null
+  filepath: string | null
+  camelot: string | null
+  openkey: string | null
+  duration_str: string | null
+  duration_sec: number | null
+  file_size_mb: number | null
+  format: string | null
+  album: string | null
+  year: string | null
+  remixer: string | null
+  grouping: string | null
+  composer: string | null
+  comment: string | null
+  label: string | null
   waveform: string | null
   artwork_path: string | null
   created_at: number | null
@@ -118,6 +138,7 @@ export function rowToTrack(row: DbTrackRow): Track {
     missing_since: row.missing_since,
     filename: row.filename ?? undefined,
     last_modified: row.last_modified,
+    column_name: row.column_name
   }
 }
 
@@ -140,9 +161,19 @@ type LibraryState = {
   importStatus: { current: number; total: number; label: string } | null
   dbReady: boolean
   editDialog: { track: Track; col: string } | null
+  // Which track's title is currently showing as an inline-rename <input> —
+  // set by either the row's pencil button or the context menu's Rename
+  // item, so both can drive the same TrackCard rename UI.
+  renamingTrackId: number | null
   crates: Crate[]
   activeCrateId: number | null
   activeFolderId: number | null
+  // Sidebar Genre/Artist browsing — mutually exclusive with each other (only
+  // one dedicated browse view can occupy the main content area at a time),
+  // but independent of activeCrateId/activeFolderId, which are composable
+  // filters within List/Board/Grid rather than a replacement view.
+  selectedGenre: string | null
+  selectedArtist: string | null
   boards: Board[]
   crateDialog:
     | { mode: 'create'; pendingTrackIds?: number[] }
@@ -182,8 +213,11 @@ type LibraryState = {
   setImportStatus: (s: { current: number; total: number; label: string } | null) => void
   openEditDialog: (track: Track, col: string) => void
   closeEditDialog: () => void
+  setRenamingTrackId: (id: number | null) => void
   setActiveCrate: (id: number | null) => void
   setActiveFolder: (id: number | null) => void
+  setSelectedGenre: (genre: string | null) => void
+  setSelectedArtist: (artist: string | null) => void
   setTrackFolder: (trackId: number, folderId: number | null) => Promise<void>
   createBoard: (name: string, color: string) => Promise<void>
   renameBoard: (id: number, oldName: string, newName: string) => Promise<void>
@@ -222,9 +256,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importStatus: null,
   dbReady: false,
   editDialog: null,
+  renamingTrackId: null,
   crates: [],
   activeCrateId: null,
   activeFolderId: null,
+  selectedGenre: null,
+  selectedArtist: null,
   boards: [],
   crateDialog: null,
 
@@ -234,14 +271,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         window.api.db.tracksCount(),
         window.api.crate.getAll(),
         window.api.crate.getAllTrackIds(),
-        window.api.board.getAll(),
+        window.api.board.getAll()
       ])
       // Build columns keyed by board name in position order; parse criteria JSON
       const sortedBoards: Board[] = [...boardRows]
         .sort((a, b) => a.position - b.position)
         .map((b) => ({
           ...b,
-          criteria: b.criteria != null ? (JSON.parse(b.criteria as unknown as string) as string[]) : null,
+          criteria:
+            b.criteria != null ? (JSON.parse(b.criteria as unknown as string) as string[]) : null
         }))
       const firstBoardName = sortedBoards[0]?.name ?? 'Untagged'
 
@@ -255,7 +293,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         id: c.id,
         name: c.name,
         color: c.color,
-        trackIds: trackIdsByCrate.get(c.id) ?? new Set(),
+        trackIds: trackIdsByCrate.get(c.id) ?? new Set()
       }))
 
       // Boards/crates are cheap and ready immediately; tracks stream in below
@@ -279,7 +317,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         offset += rows.length
         set({
           columns: { ...columns },
-          importStatus: offset < total ? { current: offset, total, label: 'Loading library…' } : null,
+          importStatus:
+            offset < total ? { current: offset, total, label: 'Loading library…' } : null
         })
       }
 
@@ -290,8 +329,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
-  setActiveView: (v) => set({ activeView: v }),
+  // Navigating tabs/views exits genre/artist browse mode — those are
+  // dedicated views occupying the same main content area, not filters that
+  // stack with List/Board/Grid the way activeCrateId/activeFolderId do.
+  setActiveTab: (tab) => set({ activeTab: tab, selectedGenre: null, selectedArtist: null }),
+  setActiveView: (v) => set({ activeView: v, selectedGenre: null, selectedArtist: null }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setActiveFilter: (f) => set({ activeFilter: f }),
   setAdvancedFilter: (key, value) =>
@@ -301,9 +343,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set((s) => {
       const already = s.activeTagFilters.findIndex((f) => f.id === tag.id)
       return {
-        activeTagFilters: already >= 0
-          ? s.activeTagFilters.filter((_, i) => i !== already)
-          : [...s.activeTagFilters, tag],
+        activeTagFilters:
+          already >= 0
+            ? s.activeTagFilters.filter((_, i) => i !== already)
+            : [...s.activeTagFilters, tag]
       }
     }),
   clearTagFilters: () => set({ activeTagFilters: [] }),
@@ -334,7 +377,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   bulkMove: (targetCol) => {
     const { selected, columns } = get()
     const updated: Record<string, Track[]> = {}
-    Object.keys(columns).forEach((col) => { updated[col] = [...columns[col]] })
+    Object.keys(columns).forEach((col) => {
+      updated[col] = [...columns[col]]
+    })
     selected.forEach((id) => {
       Object.keys(updated).forEach((col) => {
         if (col === targetCol) return
@@ -381,7 +426,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
     set({
       columns,
-      activeTrack: activeTrack?.id === id ? { ...activeTrack, ...updates } : activeTrack,
+      activeTrack: activeTrack?.id === id ? { ...activeTrack, ...updates } : activeTrack
     })
     // Map Track.key → key_val for DB
     const dbFields: Record<string, unknown> = { ...updates }
@@ -411,9 +456,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         genre: r.genre ?? '',
         energy,
         artist: r.artist ?? '',
-        year: r.year ?? '',
+        year: r.year ?? ''
       }
-      const column_name = boards.length ? computeStatus(tempTrack, boards) : (bpm && key_val ? 'Tagged' : 'Untagged')
+      const column_name = boards.length
+        ? computeStatus(tempTrack, boards)
+        : bpm && key_val
+          ? 'Tagged'
+          : 'Untagged'
       return {
         title: r.title ?? r.filename ?? 'Unknown',
         artist: r.artist ?? '',
@@ -442,7 +491,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         artwork_path: r.artwork_path ?? null,
         partial_hash: r.partial_hash ?? null,
         last_modified: r.last_modified ?? null,
-        filename: r.filename ?? (r.filepath ? r.filepath.split('/').pop()! : null),
+        filename: r.filename ?? (r.filepath ? r.filepath.split('/').pop()! : null)
       }
     })
 
@@ -490,7 +539,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         artwork_path: row.artwork_path ?? undefined,
         // Optimistic local value — the real strftime('%s','now') is set server-side
         // at insert time; this is a same-second approximation for immediate UI display.
-        created_at: Math.floor(Date.now() / 1000),
+        created_at: Math.floor(Date.now() / 1000)
       }
       const dest = row.column_name
       if (!buckets[dest]) buckets[dest] = []
@@ -550,13 +599,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({
       columns,
       selected: new Set(),
-      activeTrack: activeTrack && idSet.has(activeTrack.id) ? null : activeTrack,
+      activeTrack: activeTrack && idSet.has(activeTrack.id) ? null : activeTrack
     })
     window.api.db.deleteTracks(ids).catch(console.error)
   },
 
-  openDeleteDialog: (ids) =>
-    set({ deleteDialog: { trackIds: Array.isArray(ids) ? ids : [ids] } }),
+  openDeleteDialog: (ids) => set({ deleteDialog: { trackIds: Array.isArray(ids) ? ids : [ids] } }),
 
   closeDeleteDialog: () => set({ deleteDialog: null }),
 
@@ -566,9 +614,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   openEditDialog: (track, col) => set({ editDialog: { track, col } }),
   closeEditDialog: () => set({ editDialog: null }),
+  setRenamingTrackId: (id) => set({ renamingTrackId: id }),
 
-  setActiveCrate: (id) => set({ activeCrateId: id }),
-  setActiveFolder: (id) => set({ activeFolderId: id }),
+  setActiveCrate: (id) => set({ activeCrateId: id, selectedGenre: null, selectedArtist: null }),
+  setActiveFolder: (id) => set({ activeFolderId: id, selectedGenre: null, selectedArtist: null }),
+  setSelectedGenre: (genre) => set({ selectedGenre: genre, selectedArtist: null }),
+  setSelectedArtist: (artist) => set({ selectedArtist: artist, selectedGenre: null }),
 
   setTrackFolder: async (trackId, folderId) => {
     await window.api.folders.updateTrackFolders([{ trackId, folderId }])
@@ -585,7 +636,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const { boards } = get()
     const position = boards.length
     const id = await window.api.board.insert(name, color, position)
-    const newBoard: Board = { id, name, color, position, created_at: Math.floor(Date.now() / 1000), criteria: null }
+    const newBoard: Board = {
+      id,
+      name,
+      color,
+      position,
+      created_at: Math.floor(Date.now() / 1000),
+      criteria: null
+    }
     set((s) => ({ boards: [...s.boards, newBoard], columns: { ...s.columns, [name]: [] } }))
   },
 
@@ -595,7 +653,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const boards = s.boards.map((b) => (b.id === id ? { ...b, name: newName } : b))
       // Rebuild columns with the renamed key in the correct position
       const columns: Record<string, Track[]> = {}
-      for (const b of boards) columns[b.name] = b.name === newName ? (s.columns[oldName] ?? []) : (s.columns[b.name] ?? [])
+      for (const b of boards)
+        columns[b.name] =
+          b.name === newName ? (s.columns[oldName] ?? []) : (s.columns[b.name] ?? [])
       return { boards, columns }
     })
   },
@@ -604,7 +664,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await window.api.board.reorder(order)
     set((s) => {
       const posMap = new Map(order.map((e) => [e.id, e.position]))
-      const boards = [...s.boards].sort((a, b) => (posMap.get(a.id) ?? a.position) - (posMap.get(b.id) ?? b.position))
+      const boards = [...s.boards]
+        .sort((a, b) => (posMap.get(a.id) ?? a.position) - (posMap.get(b.id) ?? b.position))
         .map((b) => ({ ...b, position: posMap.get(b.id) ?? b.position }))
       // Rebuild columns in new order (preserving track arrays)
       const columns: Record<string, Track[]> = {}
@@ -633,9 +694,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const newBoards = s.boards.filter((b) => b.id !== id)
       const newColumns: Record<string, Track[]> = {}
       for (const b of newBoards) {
-        newColumns[b.name] = b.name === fallbackName
-          ? [...(s.columns[b.name] ?? []), ...orphans]
-          : (s.columns[b.name] ?? [])
+        newColumns[b.name] =
+          b.name === fallbackName
+            ? [...(s.columns[b.name] ?? []), ...orphans]
+            : (s.columns[b.name] ?? [])
       }
       return { boards: newBoards, columns: newColumns }
     })
@@ -648,13 +710,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     let track: Track | undefined
     Object.entries(columns).forEach(([col, tracks]) => {
       const found = tracks.find((t) => t.id === trackId)
-      if (found) { currentCol = col; track = found }
+      if (found) {
+        currentCol = col
+        track = found
+      }
     })
     if (!track || !currentCol) return
     const unpinned = { ...track, status_is_manual: false }
     const targetCol = computeStatus(unpinned, boards)
     const newColumns = { ...columns }
-    newColumns[currentCol] = newColumns[currentCol].map((t) => t.id === trackId ? unpinned : t)
+    newColumns[currentCol] = newColumns[currentCol].map((t) => (t.id === trackId ? unpinned : t))
     if (targetCol && targetCol !== currentCol && newColumns[targetCol] !== undefined) {
       newColumns[currentCol] = newColumns[currentCol].filter((t) => t.id !== trackId)
       newColumns[targetCol] = [...newColumns[targetCol], unpinned]
@@ -686,7 +751,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     // Update in-memory state
     const moved = new Map(toMove.map(({ id, from, to }) => [id, { from, to }]))
     const newColumns: Record<string, Track[]> = {}
-    Object.keys(columns).forEach((col) => { newColumns[col] = [] })
+    Object.keys(columns).forEach((col) => {
+      newColumns[col] = []
+    })
     Object.entries(columns).forEach(([col, tracks]) => {
       tracks.forEach((track) => {
         const mv = moved.get(track.id)
@@ -710,7 +777,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   updateCrate: async (id, name, color) => {
     await window.api.crate.update(id, name, color)
     set((s) => ({
-      crates: s.crates.map((c) => (c.id === id ? { ...c, name, color } : c)),
+      crates: s.crates.map((c) => (c.id === id ? { ...c, name, color } : c))
     }))
   },
 
@@ -718,7 +785,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await window.api.crate.delete(id)
     set((s) => ({
       crates: s.crates.filter((c) => c.id !== id),
-      activeCrateId: s.activeCrateId === id ? null : s.activeCrateId,
+      activeCrateId: s.activeCrateId === id ? null : s.activeCrateId
     }))
   },
 
@@ -730,7 +797,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         const next = new Set(c.trackIds)
         trackIds.forEach((id) => next.add(id))
         return { ...c, trackIds: next }
-      }),
+      })
     }))
   },
 
@@ -742,7 +809,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         const next = new Set(c.trackIds)
         trackIds.forEach((id) => next.delete(id))
         return { ...c, trackIds: next }
-      }),
+      })
     }))
-  },
+  }
 }))
