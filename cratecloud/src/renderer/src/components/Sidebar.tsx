@@ -161,11 +161,13 @@ export function Sidebar(): React.JSX.Element {
     const next = !genresOpen
     setGenresOpen(next)
     saveOpenState('cratecloud_sidebar_genres_open', next)
-    if (next && !genresLoaded) {
-      setGenresLoaded(true)
+    if (next) {
+      // Refetch on every open, not just the first — genresLoaded previously
+      // gated this permanently after first load, so a genre rename (inline
+      // edit, Label Manager) never showed up here until app restart.
       window.api.db
         .allGenres()
-        .then(setGenres)
+        .then((rows) => { setGenres(rows); setGenresLoaded(true) })
         .catch((err) => console.error('[sidebar] allGenres failed:', err))
     }
   }
@@ -181,11 +183,11 @@ export function Sidebar(): React.JSX.Element {
     const next = !artistsOpen
     setArtistsOpen(next)
     saveOpenState('cratecloud_sidebar_artists_open', next)
-    if (next && !artistsLoaded) {
-      setArtistsLoaded(true)
+    if (next) {
+      // Same fix as toggleGenres — refetch every open, not just the first.
       window.api.db
         .allArtists()
-        .then(setArtists)
+        .then((rows) => { setArtists(rows); setArtistsLoaded(true) })
         .catch((err) => console.error('[sidebar] allArtists failed:', err))
     }
   }

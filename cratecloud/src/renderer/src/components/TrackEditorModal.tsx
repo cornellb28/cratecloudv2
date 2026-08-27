@@ -182,6 +182,8 @@ export function TrackEditorModal({ track, onClose }: {
               <div className="ca-label">BPM</div>
               <input className="ca-input" value={form.bpm} placeholder="—" onChange={(e) => set('bpm', e.target.value)} />
             </div>
+          </div>
+          <div className="ca-row">
             <div className="ca-field">
               <div className="ca-label">Key</div>
               <CamelotKeyPicker value={form.key} onChange={(v) => commitNow('key', v)} />

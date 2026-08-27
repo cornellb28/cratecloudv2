@@ -25,7 +25,7 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'created_at', label: 'Date added' }
 ]
 
-export function sortTracks(tracks: Track[], sortBy: SortKey): Track[] {
+export function sortTracks<T extends Track>(tracks: T[], sortBy: SortKey): T[] {
   const sorted = [...tracks]
   sorted.sort((a, b) => {
     switch (sortBy) {

@@ -2,7 +2,9 @@ import { useEffect, useState, useRef } from 'react'
 import { useSetlistStore } from '../../stores/useSetlistStore'
 import { useLibraryStore } from '../../stores/useLibraryStore'
 import { usePlayerStore } from '../../stores/usePlayerStore'
+import { useTrackCardActions } from '../../hooks/useTrackCardActions'
 import { TrackEditorModal } from '../TrackEditorModal'
+import { InlineGenreEditor } from '../InlineGenreEditor'
 import type { Track } from '../../types/track'
 
 function totalDuration(tracks: Track[]): string {
@@ -242,6 +244,11 @@ function SetlistBulkEditModal({ tracks, onClose }: {
 }
 
 /* ── Grid card ────────────────────────────────────────────────────────── */
+// Missing-file state, right-click context menu, and inline genre edit come
+// from useTrackCardActions (see Section 3) — the same shared logic
+// TrackCard and FolderHierarchyView's TrackRow use. Reordering/selection/
+// remove-from-playlist stay local to this view (playlist-scoped, distinct
+// from the library-wide selection every other track surface shares).
 function SetlistGridCard({ track, index, selected, onToggleSelect, onPlay, isPlaying, onRemove, onEdit }: {
   track: Track
   index: number
@@ -253,6 +260,8 @@ function SetlistGridCard({ track, index, selected, onToggleSelect, onPlay, isPla
   onEdit: () => void
 }): React.JSX.Element {
   const { audioPort } = useLibraryStore()
+  const { isMissing, genreEditorOpen, setGenreEditorOpen, genreError, handleGenreSelect, handleContextMenu } =
+    useTrackCardActions(track)
   const [artSrc, setArtSrc] = useState<string | undefined>(
     track.artwork_path && audioPort
       ? `http://127.0.0.1:${audioPort}${track.artwork_path}`
@@ -262,13 +271,15 @@ function SetlistGridCard({ track, index, selected, onToggleSelect, onPlay, isPla
   return (
     <div
       className={`sl-grid-card${selected ? ' selected' : ''}`}
-      onDoubleClick={onEdit}
+      onClick={onEdit}
+      onContextMenu={handleContextMenu}
     >
       <div className="sl-grid-card-top">
         <button
           className={`sl-grid-play${isPlaying ? ' playing' : ''}`}
-          onClick={onPlay}
-          title={isPlaying ? 'Playing' : 'Play'}
+          onClick={(e) => { e.stopPropagation(); if (!isMissing) onPlay() }}
+          disabled={isMissing}
+          title={isMissing ? 'File not found on disk' : (isPlaying ? 'Playing' : 'Play')}
         >
           {isPlaying ? '▶' : index + 1}
         </button>
@@ -288,6 +299,7 @@ function SetlistGridCard({ track, index, selected, onToggleSelect, onPlay, isPla
         ) : (
           <div className="sl-grid-art-placeholder">♪</div>
         )}
+        {isMissing && <div className="lib-grid-missing-dot" title="File not found on disk" />}
       </div>
       <div className="sl-grid-info">
         <div className="sl-grid-title" title={track.title}>{track.title}</div>
@@ -297,9 +309,129 @@ function SetlistGridCard({ track, index, selected, onToggleSelect, onPlay, isPla
         {track.bpm && <span className="lib-tag bpm">{track.bpm}</span>}
         {track.key && <span className="lib-tag key">{track.key}</span>}
         {track.energy && <span className="lib-tag energy">E{track.energy}</span>}
+        <span
+          className={`tag genre ige-trigger${!track.genre ? ' dim' : ''}`}
+          onClick={(e) => { e.stopPropagation(); setGenreEditorOpen(true) }}
+        >
+          {track.genre || 'Genre?'} <span className="ige-chevron">▾</span>
+          {genreEditorOpen && (
+            <InlineGenreEditor
+              value={track.genre}
+              onSelect={(v) => void handleGenreSelect(v)}
+              onClose={() => setGenreEditorOpen(false)}
+            />
+          )}
+        </span>
       </div>
-      <button className="sl-grid-remove" onClick={onRemove} title="Remove from playlist">✕</button>
+      {genreError && <div className="fhv-rename-error">{genreError}</div>}
+      <button className="sl-grid-remove" onClick={(e) => { e.stopPropagation(); onRemove() }} title="Remove from playlist">✕</button>
     </div>
+  )
+}
+
+/* ── List row ─────────────────────────────────────────────────────────── */
+// Extracted so useTrackCardActions can be called once per row (hooks can't
+// be called inside the .map() callback this used to live in directly).
+function SetlistTrackRow({
+  track, index, isCurrentlyPlaying, isPlaying, isChecked, isDragOver, onToggleSelect,
+  onPlay, onRemove, onEdit, onDragStart, onDragEnter, onDrop, onDragEnd,
+}: {
+  track: Track
+  index: number
+  isCurrentlyPlaying: boolean
+  isPlaying: boolean
+  isChecked: boolean
+  isDragOver: boolean
+  onToggleSelect: () => void
+  onPlay: () => void
+  onRemove: () => void
+  onEdit: () => void
+  onDragStart: () => void
+  onDragEnter: () => void
+  onDrop: () => void
+  onDragEnd: () => void
+}): React.JSX.Element {
+  const { isMissing, genreEditorOpen, setGenreEditorOpen, genreError, handleGenreSelect, handleContextMenu } =
+    useTrackCardActions(track)
+
+  return (
+    <tr
+      className={[
+        'lib-track-row',
+        isCurrentlyPlaying ? 'lib-playing' : '',
+        isChecked ? 'sl-row-selected' : '',
+        isDragOver ? 'sl-drag-over' : '',
+      ].filter(Boolean).join(' ')}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      onClick={onEdit}
+      onContextMenu={handleContextMenu}
+    >
+      <td className="lib-td sl-td-drag" title="Drag to reorder">⠿</td>
+      <td className="lib-td sl-td-check" onClick={(e) => e.stopPropagation()}>
+        <label className="sl-check-label">
+          <input type="checkbox" checked={isChecked} onChange={onToggleSelect} />
+          <span className="sl-check-box" />
+        </label>
+      </td>
+      <td
+        className="lib-td lib-td-num"
+        onClick={(e) => { e.stopPropagation(); if (!isMissing) onPlay() }}
+        title={isMissing ? 'File not found on disk' : (isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play')}
+        style={isMissing ? { cursor: 'default' } : undefined}
+      >
+        {isCurrentlyPlaying
+          ? <span className="lib-num-playing">{isPlaying ? '⏸' : '▶'}</span>
+          : <><span className="lib-num-idx">{index + 1}</span><span className="lib-num-play" style={isMissing ? { opacity: 0.3 } : undefined}>▶</span></>
+        }
+      </td>
+      <td className="lib-td lib-td-title">
+        {track.title}
+        {isMissing && (
+          <span className="tag missing" style={{ marginLeft: 6 }} title="File not found on disk">⚠ Missing</span>
+        )}
+      </td>
+      <td className="lib-td lib-td-artist">{track.artist || <span className="lib-dim">—</span>}</td>
+      <td className="lib-td lib-td-mono">
+        {track.bpm ? <span className="lib-tag bpm">{track.bpm}</span> : <span className="lib-dim">—</span>}
+      </td>
+      <td className="lib-td lib-td-mono">
+        {track.key ? <span className="lib-tag key">{track.key}</span> : <span className="lib-dim">—</span>}
+      </td>
+      <td className="lib-td">
+        <span
+          className={`tag genre ige-trigger${!track.genre ? ' dim' : ''}`}
+          onClick={(e) => { e.stopPropagation(); setGenreEditorOpen(true) }}
+        >
+          {track.genre || '—'} <span className="ige-chevron">▾</span>
+          {genreEditorOpen && (
+            <InlineGenreEditor
+              value={track.genre}
+              onSelect={(v) => void handleGenreSelect(v)}
+              onClose={() => setGenreEditorOpen(false)}
+            />
+          )}
+        </span>
+        {genreError && <div className="fhv-rename-error">{genreError}</div>}
+      </td>
+      <td className="lib-td lib-td-mono">
+        {track.energy ? <span className="lib-tag energy">E{track.energy}</span> : <span className="lib-dim">—</span>}
+      </td>
+      <td className="lib-td lib-td-mono">{track.duration_str || <span className="lib-dim">—</span>}</td>
+      <td className="lib-td sl-td-remove">
+        <button
+          className="sl-remove-btn"
+          onClick={(e) => { e.stopPropagation(); onRemove() }}
+          title="Remove from playlist"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
   )
 }
 
@@ -310,7 +442,7 @@ export function SetlistView(): React.JSX.Element {
     createSetlist, renameSetlist, deleteSetlist,
     removeTrack, reorder, exportToSerato,
   } = useSetlistStore()
-  const { columns } = useLibraryStore()
+  const { columns, setActiveTrack } = useLibraryStore()
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
 
   const [newName, setNewName] = useState('')
@@ -566,68 +698,25 @@ export function SetlistView(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {setlistTracks.map((track, i) => {
-                    const isCurrentlyPlaying = currentTrack?.id === track.id
-                    const isChecked = selectedIds.has(track.id)
-                    return (
-                      <tr
-                        key={track.id}
-                        className={[
-                          'lib-track-row',
-                          isCurrentlyPlaying ? 'lib-playing' : '',
-                          isChecked ? 'sl-row-selected' : '',
-                          dragOver === i ? 'sl-drag-over' : '',
-                        ].filter(Boolean).join(' ')}
-                        draggable
-                        onDragStart={() => handleDragStart(i)}
-                        onDragEnter={() => handleDragEnter(i)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => { void handleDrop() }}
-                        onDragEnd={() => { setDragIdx(null); setDragOver(null) }}
-                        onDoubleClick={() => { setEditModalTracks([track]) }}
-                      >
-                        <td className="lib-td sl-td-drag" title="Drag to reorder">⠿</td>
-                        <td className="lib-td sl-td-check" onClick={(e) => e.stopPropagation()}>
-                          <label className="sl-check-label">
-                            <input type="checkbox" checked={isChecked} onChange={() => toggleSelect(track.id)} />
-                            <span className="sl-check-box" />
-                          </label>
-                        </td>
-                        <td
-                          className="lib-td lib-td-num"
-                          onClick={() => handlePlay(track)}
-                          title={isCurrentlyPlaying ? (isPlaying ? 'Pause' : 'Resume') : 'Play'}
-                        >
-                          {isCurrentlyPlaying
-                            ? <span className="lib-num-playing">{isPlaying ? '⏸' : '▶'}</span>
-                            : <><span className="lib-num-idx">{i + 1}</span><span className="lib-num-play">▶</span></>
-                          }
-                        </td>
-                        <td className="lib-td lib-td-title">{track.title}</td>
-                        <td className="lib-td lib-td-artist">{track.artist || <span className="lib-dim">—</span>}</td>
-                        <td className="lib-td lib-td-mono">
-                          {track.bpm ? <span className="lib-tag bpm">{track.bpm}</span> : <span className="lib-dim">—</span>}
-                        </td>
-                        <td className="lib-td lib-td-mono">
-                          {track.key ? <span className="lib-tag key">{track.key}</span> : <span className="lib-dim">—</span>}
-                        </td>
-                        <td className="lib-td">{track.genre || <span className="lib-dim">—</span>}</td>
-                        <td className="lib-td lib-td-mono">
-                          {track.energy ? <span className="lib-tag energy">E{track.energy}</span> : <span className="lib-dim">—</span>}
-                        </td>
-                        <td className="lib-td lib-td-mono">{track.duration_str || <span className="lib-dim">—</span>}</td>
-                        <td className="lib-td sl-td-remove">
-                          <button
-                            className="sl-remove-btn"
-                            onClick={() => { void removeTrack(active.id, track.id) }}
-                            title="Remove from playlist"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {setlistTracks.map((track, i) => (
+                    <SetlistTrackRow
+                      key={track.id}
+                      track={track}
+                      index={i}
+                      isCurrentlyPlaying={currentTrack?.id === track.id}
+                      isPlaying={isPlaying}
+                      isChecked={selectedIds.has(track.id)}
+                      isDragOver={dragOver === i}
+                      onToggleSelect={() => toggleSelect(track.id)}
+                      onPlay={() => handlePlay(track)}
+                      onRemove={() => { void removeTrack(active.id, track.id) }}
+                      onEdit={() => { setActiveTrack(track, ''); setEditModalTracks([track]) }}
+                      onDragStart={() => handleDragStart(i)}
+                      onDragEnter={() => handleDragEnter(i)}
+                      onDrop={() => { void handleDrop() }}
+                      onDragEnd={() => { setDragIdx(null); setDragOver(null) }}
+                    />
+                  ))}
                 </tbody>
               </table>
             ) : (
@@ -642,7 +731,7 @@ export function SetlistView(): React.JSX.Element {
                     onPlay={() => handlePlay(track)}
                     isPlaying={currentTrack?.id === track.id && isPlaying}
                     onRemove={() => { void removeTrack(active.id, track.id) }}
-                    onEdit={() => setEditModalTracks([track])}
+                    onEdit={() => { setActiveTrack(track, ''); setEditModalTracks([track]) }}
                   />
                 ))}
               </div>

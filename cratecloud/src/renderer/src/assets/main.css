@@ -277,6 +277,10 @@
 .modal-btn-danger { background: var(--color-danger); border: none; border-radius: var(--radius-md); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; padding: var(--space-2) var(--space-4); cursor: pointer; transition: background .15s; }
 .modal-btn-danger:hover { background: #e06840; }
 
+/* Shared "moved out of this view" fade, set via TrackCard's `leaving` prop
+   (useFreshenTracks) — applies across all three display modes (tr/div/div). */
+.tc-leaving { opacity: 0 !important; pointer-events: none; transition: opacity 500ms ease; }
+
 /* ── Track cards ── */
 /* Height bumped 76→80px to give the hover-actions row headroom for 28px
    chab buttons (up from 22px) — see Item 8 touch-target pass. */
@@ -420,6 +424,7 @@
 .lib-th-num { width: 36px; text-align: right; }
 .lib-th-mono { font-family: 'IBM Plex Mono', monospace; }
 .lib-th-board { width: 110px; }
+.lib-th-actions { width: 116px; }
 /* Board column in list rows */
 .lib-td-board { width: 110px; }
 .lib-board-pill { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,.18); border-radius: 5px; padding: 2px 6px; max-width: 100px; overflow: hidden; }
@@ -1253,6 +1258,11 @@
 .fhv-track-title { font-size: 12px; color: #7a7a9a; flex-shrink: 0; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fhv-track-artist { font-size: 11px; color: var(--color-text-disabled); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fhv-track-bpm { font-size: 10px; color: var(--color-border-strong); flex-shrink: 0; margin-left: auto; }
+.fhv-track-check { cursor: pointer; flex-shrink: 0; }
+.fhv-track-row.fhv-track-selected { background: var(--color-tag-genre-bg); }
+.fhv-track-row.fhv-track-leaving { opacity: 0; pointer-events: none; transition: opacity 500ms ease; }
+.fhv-track-actions { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; opacity: 0; transition: opacity .12s; }
+.fhv-track-row:hover .fhv-track-actions { opacity: 1; }
 .fhv-drag-ghost { padding: 5px 10px; background: #1e1e3a; border: 1px solid color-mix(in srgb, var(--color-brand) 33%, transparent); border-radius: 5px; color: var(--color-text-secondary); font-size: 12px; pointer-events: none; white-space: nowrap; }
 
 /* ── Grouped views (Albums / Genres) ─────────────────────────────────────── */
@@ -1458,8 +1468,30 @@
 .lm-energy-bar { height: 100%; background: var(--color-tag-energy-text); border-radius: var(--radius-sm); transition: width .2s; }
 
 .lm-preview { width: 240px; flex-shrink: 0; border-left: 1px solid var(--color-border); overflow-y: auto; }
-.lm-preview-card { padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-border); }
+.lm-preview-card { padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-border); cursor: pointer; transition: background .12s; }
+.lm-preview-card:hover { background: var(--color-surface-2); }
 .lm-preview-title { font-size: 12px; color: var(--color-text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lm-preview-artist { font-size: 11px; color: var(--color-text-disabled); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: var(--space-1); }
 .lm-preview-viewall { padding: var(--space-3) var(--space-4); font-size: 12px; color: var(--color-brand-light); cursor: pointer; }
 .lm-preview-viewall:hover { text-decoration: underline; }
+
+/* ── Canonical TrackCard — list-mode hover actions ── */
+.lib-td-actions { width: 116px; padding: 0 var(--space-2); }
+.lib-row-actions { display: flex; align-items: center; gap: var(--space-1); opacity: 0; transition: opacity .12s; }
+.lib-track-row:hover .lib-row-actions { opacity: 1; }
+
+/* ── Canonical TrackCard — grid-mode three-dot ── */
+.lib-grid-menu-btn { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; background: rgba(0,0,0,.55); color: #fff; opacity: 0; transition: opacity .15s; }
+.lib-grid-item:hover .lib-grid-menu-btn { opacity: 1; }
+
+/* ── Inline genre editor (chevron trigger + popover) ── */
+.ige-trigger { position: relative; cursor: pointer; }
+.ige-chevron { font-size: 8px; opacity: 0; transition: opacity .12s; }
+.ige-trigger:hover .ige-chevron { opacity: 0.7; }
+.ige-popover { position: absolute; top: calc(100% + 4px); left: 0; z-index: 200; width: 180px; background: var(--color-surface-3); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(0,0,0,.6); padding: var(--space-1) 0; }
+.ige-input { display: block; box-sizing: border-box; width: calc(100% - var(--space-4)); margin: var(--space-1) var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); font-size: 12px; padding: var(--space-1) var(--space-2); font-family: 'DM Sans', sans-serif; outline: none; }
+.ige-input:focus { border-color: var(--color-brand); }
+.ige-list { max-height: 200px; overflow-y: auto; }
+.ige-item { padding: var(--space-1) var(--space-3); font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ige-item:hover { background: var(--color-surface-2); }
+.ige-empty { padding: var(--space-1) var(--space-3); font-size: 11px; color: var(--color-text-disabled); font-style: italic; }

@@ -3,13 +3,16 @@
 // sized to match real rows/cards since these browse views are genuinely
 // paginated. Split from browseShared.ts (pure logic) so this file stays
 // components-only, which Fast Refresh requires.
+//
+// colSpan is 13 to match the canonical TrackCard's list-mode column count
+// (Section 3) — was 10 when these views had their own hand-rolled table.
 
 export function ListPlaceholderRows({ count }: { count: number }): React.JSX.Element {
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
         <tr key={i} className="gv-placeholder-row">
-          <td colSpan={10}>
+          <td colSpan={13}>
             <div className="gv-placeholder-bar" />
           </td>
         </tr>

@@ -1,12 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useLibraryStore, rowToTrack } from '../stores/useLibraryStore'
-import { usePlayerStore } from '../stores/usePlayerStore'
-import { useContextMenu } from '../contexts/ContextMenuContext'
 import { useBrowserPagination } from '../hooks/useBrowserPagination'
 import { useScrollSentinel } from '../hooks/useScrollSentinel'
-import { TrackCard } from '../components/board/TrackCard'
-import { TrackEditorModal } from '../components/TrackEditorModal'
-import type { Track, Board } from '../types/track'
+import { useFreshenTracks } from '../hooks/useFreshenTracks'
+import { TrackCard } from '../components/TrackCard'
+import type { Board, Track } from '../types/track'
 import { hashColor, sortTracks, SORT_OPTIONS, type ViewMode, type SortKey } from './browseShared'
 import { ListPlaceholderRows, GridPlaceholderCards } from './browsePlaceholders'
 
@@ -35,6 +33,8 @@ function ArtistBoardColumn({
     key: `${artist}::${boardName}`
   })
   const sentinelRef = useScrollSentinel(loadMore, hasMore && !loading)
+  const belongsInView = useCallback((t: Track) => t.artist === artist, [artist])
+  const freshTracks = useFreshenTracks(tracks, belongsInView)
 
   return (
     <div className="col">
@@ -44,8 +44,17 @@ function ArtistBoardColumn({
         <span className="col-count">{total}</span>
       </div>
       <div className="col-body">
-        {tracks.map((t) => (
-          <TrackCard key={t.id} track={t} col={boardName} allBoards={allBoards} />
+        {freshTracks.map((t) => (
+          <TrackCard
+            key={t.id}
+            track={t}
+            viewContext={{ type: 'artist', id: artist }}
+            displayMode="board"
+            genreEditable
+            leaving={t.leaving}
+            col={boardName}
+            allBoards={allBoards}
+          />
         ))}
         {loading && <GridPlaceholderCards count={2} variant="board" />}
         {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
@@ -58,10 +67,7 @@ function ArtistBoardColumn({
 }
 
 export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
-  const { boards, selected, toggleSelect, selectTracks, clearSelection, audioPort } =
-    useLibraryStore()
-  const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore()
-  const { openMenu } = useContextMenu()
+  const { boards, selected, selectTracks, clearSelection } = useLibraryStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [searchQuery, setSearchQuery] = useState('')
@@ -69,8 +75,6 @@ export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
   // no-op — Title is the meaningful default here (GenreView defaults to
   // Artist for the same reason, inverted).
   const [sortBy, setSortBy] = useState<SortKey>('title')
-  const [modalTrack, setModalTrack] = useState<Track | null>(null)
-  const lastClickedRef = useState<{ current: number | null }>(() => ({ current: null }))[0]
 
   const { tracks, total, loading, hasMore, error, loadMore } = useBrowserPagination({
     fetchPage: (offset, limit) =>
@@ -81,6 +85,9 @@ export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
   })
   const sentinelRef = useScrollSentinel(loadMore, hasMore && !loading && viewMode !== 'board')
 
+  const belongsInView = useCallback((t: Track) => t.artist === artist, [artist])
+  const freshTracks = useFreshenTracks(tracks, belongsInView)
+
   // Client-side only — search/sort operate on whatever pages have loaded so
   // far, not the full artist catalog; a genuine tradeoff of combining real
   // pagination with client-side filtering (there's no server-side query
@@ -89,38 +96,15 @@ export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
   const visibleTracks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     const filtered = q
-      ? tracks.filter(
+      ? freshTracks.filter(
           (t) => t.title.toLowerCase().includes(q) || (t.genre || '').toLowerCase().includes(q)
         )
-      : tracks
+      : freshTracks
     return sortTracks(filtered, sortBy)
-  }, [tracks, searchQuery, sortBy])
+  }, [freshTracks, searchQuery, sortBy])
 
   const allVisibleIds = visibleTracks.map((t) => t.id)
   const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id))
-
-  const artUrl = (t: Track): string | null =>
-    t.artwork_path && audioPort ? `http://127.0.0.1:${audioPort}${t.artwork_path}` : null
-
-  const handleCheckboxClick = (e: React.MouseEvent, trackId: number): void => {
-    e.stopPropagation()
-    if (e.shiftKey && lastClickedRef.current !== null) {
-      const lastIdx = allVisibleIds.indexOf(lastClickedRef.current)
-      const currIdx = allVisibleIds.indexOf(trackId)
-      if (lastIdx !== -1 && currIdx !== -1) {
-        const [from, to] = [Math.min(lastIdx, currIdx), Math.max(lastIdx, currIdx)]
-        selectTracks([...new Set([...selected, ...allVisibleIds.slice(from, to + 1)])])
-        return
-      }
-    }
-    toggleSelect(trackId)
-    lastClickedRef.current = trackId
-  }
-
-  const handleContextMenu = (e: React.MouseEvent, track: Track): void => {
-    e.preventDefault()
-    openMenu(e.clientX, e.clientY, track, track.column_name ?? '')
-  }
 
   return (
     <div className="gv-root">
@@ -214,60 +198,17 @@ export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
         </div>
       ) : viewMode === 'grid' ? (
         <div className="lib-grid">
-          {visibleTracks.map((track) => {
-            const art = artUrl(track)
-            const isCurrent = currentTrack?.id === track.id
-            const isSelected = selected.has(track.id)
-            return (
-              <div
-                key={track.id}
-                className={[
-                  'lib-grid-item',
-                  isCurrent ? 'lib-grid-playing' : '',
-                  isSelected ? 'lib-grid-selected' : ''
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => setModalTrack(track)}
-                onDoubleClick={() => track.filepath && playTrack(track)}
-                onContextMenu={(e) => handleContextMenu(e, track)}
-              >
-                <div className="lib-grid-art">
-                  {art ? (
-                    <img src={art} className="lib-grid-img" draggable={false} />
-                  ) : (
-                    <div className="lib-grid-art-empty">♪</div>
-                  )}
-                  <div
-                    className={`lib-grid-check${isSelected ? ' checked' : ''}`}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleSelect(track.id)
-                    }}
-                  >
-                    {isSelected && '✓'}
-                  </div>
-                  <button
-                    className={`lib-grid-play-btn${isCurrent ? ' visible' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      isCurrent ? togglePlayPause() : track.filepath && playTrack(track)
-                    }}
-                    type="button"
-                  >
-                    {isCurrent && isPlaying ? '⏸' : '▶'}
-                  </button>
-                </div>
-                <div className="lib-grid-title">{track.title}</div>
-                <div className="lib-grid-artist">{track.artist || '—'}</div>
-                <div className="lib-grid-tags">
-                  {track.bpm && <span className="lib-tag bpm">{track.bpm}</span>}
-                  {track.key && <span className="lib-tag key">{track.key}</span>}
-                </div>
-              </div>
-            )
-          })}
+          {visibleTracks.map((track) => (
+            <TrackCard
+              key={track.id}
+              track={track}
+              viewContext={{ type: 'artist', id: artist }}
+              displayMode="grid"
+              genreEditable
+              leaving={track.leaving}
+              allBoards={boards}
+            />
+          ))}
           {loading && <GridPlaceholderCards count={4} variant="grid" />}
         </div>
       ) : (
@@ -279,106 +220,29 @@ export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
                 <th className="lib-th lib-th-num">#</th>
                 <th className="lib-th lib-th-art" />
                 <th className="lib-th">Title</th>
-                <th className="lib-th">Genre</th>
+                <th className="lib-th">Artist</th>
                 <th className="lib-th lib-th-mono">BPM</th>
                 <th className="lib-th lib-th-mono">Key</th>
+                <th className="lib-th">Genre</th>
                 <th className="lib-th lib-th-mono">Energy</th>
                 <th className="lib-th lib-th-mono">Duration</th>
+                <th className="lib-th lib-th-mono">Format</th>
                 <th className="lib-th lib-th-board">Board</th>
+                <th className="lib-th lib-th-actions" />
               </tr>
             </thead>
             <tbody>
-              {visibleTracks.map((track, i) => {
-                const isSelected = selected.has(track.id)
-                const isCurrent = currentTrack?.id === track.id
-                const board = boards.find((b) => b.name === track.column_name)
-                return (
-                  <tr
-                    key={track.id}
-                    className={[
-                      'lib-track-row',
-                      isSelected ? 'lib-selected' : '',
-                      isCurrent ? 'lib-playing' : ''
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    onClick={() => setModalTrack(track)}
-                    onDoubleClick={() => track.filepath && playTrack(track)}
-                    onContextMenu={(e) => handleContextMenu(e, track)}
-                  >
-                    <td
-                      className="lib-td lib-td-check"
-                      onClick={(e) => handleCheckboxClick(e, track.id)}
-                    >
-                      <div className={`lib-check${isSelected ? ' checked' : ''}`}>
-                        {isSelected && <span>✓</span>}
-                      </div>
-                    </td>
-                    <td
-                      className="lib-td lib-td-num"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        isCurrent ? togglePlayPause() : track.filepath && playTrack(track)
-                      }}
-                    >
-                      {isCurrent ? (
-                        <span className="lib-num-playing">{isPlaying ? '⏸' : '▶'}</span>
-                      ) : (
-                        <>
-                          <span className="lib-num-idx">{i + 1}</span>
-                          <span className="lib-num-play">▶</span>
-                        </>
-                      )}
-                    </td>
-                    <td className="lib-td lib-td-art">
-                      {artUrl(track) ? (
-                        <img className="lib-art-thumb" src={artUrl(track)!} draggable={false} />
-                      ) : (
-                        <div className="lib-art-empty">♪</div>
-                      )}
-                    </td>
-                    <td className="lib-td lib-td-title">{track.title}</td>
-                    <td className="lib-td lib-td-artist">
-                      {track.genre || <span className="lib-dim">—</span>}
-                    </td>
-                    <td className="lib-td lib-td-mono">
-                      {track.bpm ? (
-                        <span className="lib-tag bpm">{track.bpm}</span>
-                      ) : (
-                        <span className="lib-dim">—</span>
-                      )}
-                    </td>
-                    <td className="lib-td lib-td-mono">
-                      {track.key ? (
-                        <span className="lib-tag key">{track.key}</span>
-                      ) : (
-                        <span className="lib-dim">—</span>
-                      )}
-                    </td>
-                    <td className="lib-td lib-td-mono">
-                      {track.energy ? (
-                        <span className="lib-tag energy">E{track.energy}</span>
-                      ) : (
-                        <span className="lib-dim">—</span>
-                      )}
-                    </td>
-                    <td className="lib-td lib-td-mono">
-                      {track.duration_str || <span className="lib-dim">—</span>}
-                    </td>
-                    <td className="lib-td lib-td-board">
-                      {board && (
-                        <div
-                          className="lib-board-pill"
-                          style={{ '--board-color': board.color } as React.CSSProperties}
-                        >
-                          <span className="lib-board-dot" style={{ background: board.color }} />
-                          <span className="lib-board-name">{board.name}</span>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
+              {visibleTracks.map((track) => (
+                <TrackCard
+                  key={track.id}
+                  track={track}
+                  viewContext={{ type: 'artist', id: artist }}
+                  displayMode="list"
+                  genreEditable
+                  leaving={track.leaving}
+                  allBoards={boards}
+                />
+              ))}
               {loading && <ListPlaceholderRows count={3} />}
             </tbody>
           </table>
@@ -390,8 +254,6 @@ export function ArtistView({ artist }: { artist: string }): React.JSX.Element {
           )}
         </div>
       )}
-
-      {modalTrack && <TrackEditorModal track={modalTrack} onClose={() => setModalTrack(null)} />}
     </div>
   )
 }

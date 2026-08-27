@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Board, Track } from '../../types/track'
-import { TrackCard } from './TrackCard'
+import { TrackCard } from '../TrackCard'
 
 type Props = {
   board: Board
@@ -90,7 +90,15 @@ export function BoardColumn({ board, tracks, allBoards, onDelete }: Props): Reac
 
       <div ref={setDropRef} className={`col-body${isOver ? ' col-body-over' : ''}`}>
         {tracks.map((t) => (
-          <TrackCard key={t.id} track={t} col={name} allBoards={allBoards} />
+          <TrackCard
+            key={t.id}
+            track={t}
+            viewContext={{ type: 'library' }}
+            displayMode="board"
+            genreEditable
+            col={name}
+            allBoards={allBoards}
+          />
         ))}
         <div className={`col-drop-zone${isOver ? ' over' : ''}`}>Drop here</div>
       </div>

@@ -7,8 +7,13 @@ import {
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useFolderStore, type FolderNode } from '../stores/useFolderStore'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import { useTrackCardActions } from '../hooks/useTrackCardActions'
+import { useLeaveTransition } from '../hooks/useLeaveTransition'
 import type { Track } from '../types/track'
 import { MoveProgressModal, type MoveResult } from './MoveProgressModal'
+import { TrackEditorModal } from './TrackEditorModal'
+import { CratePicker } from './CratePicker'
+import { InlineGenreEditor } from './InlineGenreEditor'
 
 // ── Drag data types ──────────────────────────────────────────────────────────
 type DragData =
@@ -148,35 +153,128 @@ function FolderRow({
 }
 
 // ── TrackRow: draggable leaf item ─────────────────────────────────────────────
-function TrackRow({ track, depth }: { track: Track; depth: number }): React.JSX.Element {
+// Drag-to-move-folder (useDraggable below) is this view's own mechanism,
+// untouched. Everything else (rename, move-to-folder-picker, add-to-crate,
+// inline genre edit, context menu, click-to-Inspector, missing state) comes
+// from the same useTrackCardActions hook TrackCard uses — see Section 3 —
+// so this stays in sync with every other track surface without being
+// forced into TrackCard's <tr>-shaped list mode, which doesn't fit a
+// variable-depth drag-and-drop tree.
+function TrackRow({
+  track,
+  depth,
+  leaving
+}: {
+  track: Track
+  depth: number
+  leaving?: boolean
+}): React.JSX.Element {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `track-${track.id}`,
     data: { type: 'track', id: track.id, currentFolderId: track.folder_id } satisfies DragData,
   })
+  const {
+    isSelected, isMissing, isRenaming, modalOpen, setModalOpen,
+    cratePickerOpen, setCratePickerOpen, crateBtnRef, moveError, renameValue, setRenameValue,
+    renameError, setRenameError, genreEditorOpen, setGenreEditorOpen, genreError,
+    startRename, commitRename, cancelRename, handleMoveToFolder, handleGenreSelect,
+    handleToggleSelect, handleRowClick, handleContextMenu,
+  } = useTrackCardActions(track)
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`fhv-track-row${isDragging ? ' fhv-dragging' : ''}`}
-      style={{ paddingLeft: 12 + depth * 16 }}
-      {...attributes}
-      {...listeners}
-    >
-      <span className="fhv-track-icon">♪</span>
-      <span className="fhv-track-title">{track.title}</span>
-      {track.artist && <span className="fhv-track-artist"> — {track.artist}</span>}
-      {track.bpm && <span className="fhv-track-bpm">{track.bpm}</span>}
-    </div>
+    <>
+      <div
+        ref={setNodeRef}
+        className={`fhv-track-row${isDragging ? ' fhv-dragging' : ''}${isSelected ? ' fhv-track-selected' : ''}${leaving ? ' fhv-track-leaving' : ''}`}
+        style={{ paddingLeft: 12 + depth * 16 }}
+        onClick={handleRowClick}
+        onContextMenu={handleContextMenu}
+        {...attributes}
+        {...listeners}
+      >
+        <div
+          className={`lib-check fhv-track-check${isSelected ? ' checked' : ''}`}
+          onClick={handleToggleSelect}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {isSelected && <span>✓</span>}
+        </div>
+        <span className="fhv-track-icon">♪</span>
+        {isRenaming ? (
+          <div
+            className="card-rename-wrap"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <input
+              className="ca-input"
+              value={renameValue}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => { setRenameValue(e.target.value); setRenameError(null) }}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') { e.preventDefault(); void commitRename() }
+                if (e.key === 'Escape') { e.preventDefault(); cancelRename() }
+              }}
+              onBlur={cancelRename}
+            />
+            {renameError && <div className="lm-rename-error">{renameError}</div>}
+          </div>
+        ) : (
+          <>
+            <span className="fhv-track-title">{track.title}</span>
+            {track.artist && <span className="fhv-track-artist"> — {track.artist}</span>}
+            {track.bpm && <span className="fhv-track-bpm">{track.bpm}</span>}
+            {track.genre && (
+              <span
+                className="tag genre ige-trigger"
+                onClick={(e) => { e.stopPropagation(); setGenreEditorOpen(true) }}
+              >
+                {track.genre} <span className="ige-chevron">▾</span>
+                {genreEditorOpen && (
+                  <InlineGenreEditor
+                    value={track.genre}
+                    onSelect={(v) => void handleGenreSelect(v)}
+                    onClose={() => setGenreEditorOpen(false)}
+                  />
+                )}
+              </span>
+            )}
+            {isMissing && <span className="tag missing" title="File not found on disk">⚠ Missing</span>}
+            {moveError && <span className="fhv-rename-error">{moveError}</span>}
+            {genreError && <span className="fhv-rename-error">{genreError}</span>}
+          </>
+        )}
+        {!isRenaming && (
+          <div
+            className="fhv-track-actions"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="chab" onClick={startRename} disabled={!track.filepath} title="Rename file" type="button">✎</button>
+            <button className="chab" onClick={() => void handleMoveToFolder()} disabled={!track.filepath} title="Move to folder" type="button">📁</button>
+            <button ref={crateBtnRef} className="chab" onClick={() => setCratePickerOpen(!cratePickerOpen)} title="Add to crate" type="button">+</button>
+            <button className="chab" onClick={handleContextMenu} title="More actions" type="button">⋯</button>
+          </div>
+        )}
+        {cratePickerOpen && (
+          <CratePicker trackId={track.id} anchorRef={crateBtnRef} onClose={() => setCratePickerOpen(false)} />
+        )}
+      </div>
+      {modalOpen && <TrackEditorModal track={track} onClose={() => setModalOpen(false)} />}
+    </>
   )
 }
 
 // ── UnassignedDropZone: tracks without a folder ───────────────────────────────
-function UnassignedDropZone({ tracks }: { tracks: Track[] }): React.JSX.Element {
+function UnassignedDropZone({ tracks: rawTracks }: { tracks: Track[] }): React.JSX.Element {
   const { isOver, setNodeRef } = useDroppable({
     id: 'folder-drop-unassigned',
     data: { folderId: null },
   })
   const [expanded, setExpanded] = useState(false)
+  const tracks = useLeaveTransition(rawTracks)
 
   return (
     <div>
@@ -187,9 +285,9 @@ function UnassignedDropZone({ tracks }: { tracks: Track[] }): React.JSX.Element 
         onClick={() => setExpanded((e) => !e)}
       >
         <span className="fhv-folder-arrow">{expanded ? '▾' : '▸'}</span>
-        <span className="fhv-folder-name fhv-folder-dim">Unassigned ({tracks.length})</span>
+        <span className="fhv-folder-name fhv-folder-dim">Unassigned ({rawTracks.length})</span>
       </div>
-      {expanded && tracks.map((t) => <TrackRow key={t.id} track={t} depth={1} />)}
+      {expanded && tracks.map((t) => <TrackRow key={t.id} track={t} depth={1} leaving={t.leaving} />)}
     </div>
   )
 }
@@ -219,7 +317,8 @@ function FolderSubtree({
   const [expanded, setExpanded] = useState(true)
   const isOver = activeDropId === `folder-drop-${folder.id}`
   const children = allFolders.filter((f) => f.parent_folder_id === folder.id)
-  const tracks = allTracks.filter((t) => t.folder_id === folder.id)
+  const rawTracks = allTracks.filter((t) => t.folder_id === folder.id)
+  const tracks = useLeaveTransition(rawTracks)
 
   return (
     <div>
@@ -250,7 +349,9 @@ function FolderSubtree({
               subtreeHasMissing={subtreeHasMissing}
             />
           ))}
-          {tracks.map((t) => <TrackRow key={t.id} track={t} depth={depth + 1} />)}
+          {tracks.map((t) => (
+            <TrackRow key={t.id} track={t} depth={depth + 1} leaving={t.leaving} />
+          ))}
         </div>
       )}
     </div>

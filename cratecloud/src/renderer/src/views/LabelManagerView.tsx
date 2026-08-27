@@ -1,7 +1,33 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import { useTrackCardActions } from '../hooks/useTrackCardActions'
+import { TrackEditorModal } from '../components/TrackEditorModal'
 import { hashColor } from './browseShared'
 import type { Track } from '../types/track'
+
+// Deliberately minimal by Item 9's own design (title/artist/BPM, no play
+// button) — this is a glance preview inside a filtered value list, not a
+// full editing surface. Adding click-to-Inspector + a context menu (via
+// the same useTrackCardActions hook every other surface uses) satisfies
+// "if a track is visible, it is editable" without changing that density.
+// Deliberately NOT given inline genre-edit: editing a track's genre away
+// from here would make it vanish from the exact list it's being previewed
+// from, which is confusing in a preview context specifically.
+function LabelPreviewCard({ track }: { track: Track }): React.JSX.Element {
+  const { isMissing, modalOpen, setModalOpen, handleRowClick, handleContextMenu } =
+    useTrackCardActions(track)
+  return (
+    <>
+      <div className="lm-preview-card" onClick={handleRowClick} onContextMenu={handleContextMenu}>
+        <div className="lm-preview-title">{track.title}</div>
+        <div className="lm-preview-artist">{track.artist || '—'}</div>
+        {track.bpm && <span className="tag bpm">{track.bpm}</span>}
+        {isMissing && <span className="tag missing" title="File not found on disk">⚠ Missing</span>}
+      </div>
+      {modalOpen && <TrackEditorModal track={track} onClose={() => setModalOpen(false)} />}
+    </>
+  )
+}
 
 type Category = 'genre' | 'artist' | 'energy' | 'board'
 type LabelField = 'genre' | 'artist'
@@ -369,11 +395,7 @@ export function LabelManagerView(): React.JSX.Element {
             {(category === 'genre' || category === 'artist') && (
               <>
                 {previewTracks.map((t) => (
-                  <div key={t.id} className="lm-preview-card">
-                    <div className="lm-preview-title">{t.title}</div>
-                    <div className="lm-preview-artist">{t.artist || '—'}</div>
-                    {t.bpm && <span className="tag bpm">{t.bpm}</span>}
-                  </div>
+                  <LabelPreviewCard key={t.id} track={t} />
                 ))}
                 {previewTracks.length === 0 && <div className="lm-empty">No tracks found.</div>}
                 <div className="lm-preview-viewall" onClick={() => goToBrowse(previewValue)}>

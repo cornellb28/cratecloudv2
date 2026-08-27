@@ -198,7 +198,13 @@ type LibraryState = {
   clearSelection: () => void
   moveTrack: (trackId: number, fromCol: string, toCol: string) => void
   bulkMove: (targetCol: string) => void
-  updateTrack: (id: number, updates: Partial<Track>) => void
+  // Optimistic update happens synchronously (before the first await) same as
+  // always — the returned promise is new, existing callers that don't await
+  // it are unaffected. Callers that DO await get a real ok/error result and,
+  // on failure, the store has already reverted the optimistic change itself
+  // (previously a failed DB write just logged to console and left the wrong
+  // value showing forever).
+  updateTrack: (id: number, updates: Partial<Track>) => Promise<{ ok: boolean; error?: string }>
   setActiveTrack: (track: Track | null, col: string | null) => void
   addTracks: (results: ImportedTrackData[], folderName?: string) => Promise<void>
   // Local-only reflects for changes the main process already persisted
@@ -401,15 +407,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     window.api.db.moveTracks([...selected], targetCol).catch(console.error)
   },
 
-  updateTrack: (id, updates) => {
+  updateTrack: async (id, updates) => {
     const { boards } = get()
     const columns = { ...get().columns }
     let updatedTrack: Track | undefined
+    let previousTrack: Track | undefined
     let currentCol = ''
 
     Object.keys(columns).forEach((col) => {
       columns[col] = columns[col].map((t) => {
         if (t.id === id) {
+          previousTrack = t
           updatedTrack = { ...t, ...updates }
           currentCol = col
           return updatedTrack
@@ -431,6 +439,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }
     }
 
+    // Optimistic — happens synchronously, before the await below, so every
+    // existing non-awaiting caller still sees an instant update exactly as
+    // before this change.
     set({
       columns,
       activeTrack: activeTrack?.id === id ? { ...activeTrack, ...updates } : activeTrack
@@ -441,7 +452,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       dbFields['key_val'] = updates.key
       delete dbFields['key']
     }
-    window.api.db.updateTrack(id, dbFields).catch(console.error)
+    try {
+      await window.api.db.updateTrack(id, dbFields)
+      return { ok: true }
+    } catch (err) {
+      console.error(err)
+      if (previousTrack) {
+        const reverted = { ...get().columns }
+        Object.keys(reverted).forEach((col) => {
+          reverted[col] = reverted[col].map((t) => (t.id === id ? previousTrack! : t))
+        })
+        const revertedActive = get().activeTrack
+        set({
+          columns: reverted,
+          activeTrack: revertedActive?.id === id ? previousTrack : revertedActive
+        })
+      }
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   },
 
   setActiveTrack: (track, col) => set({ activeTrack: track, activeTrackCol: col }),

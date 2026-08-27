@@ -1,3 +1,13 @@
+// Which surface a TrackCard is being rendered in — 'crate'/'search'/'smart'
+// deliberately omitted: crate filtering and search are inline states within
+// LibraryView today, not separate view components, and there is no "smart
+// view" concept anywhere in this codebase.
+export type ViewContextType = 'library' | 'genre' | 'artist' | 'folder' | 'setlist' | 'label-manager'
+export interface ViewContext {
+  type: ViewContextType
+  id?: string | number
+}
+
 export type Track = {
   id: number
   title: string
